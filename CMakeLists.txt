@@ -7,6 +7,7 @@ project(exchange
 )
 
 set(CMAKE_CXX_STANDARD 23)
+enable_testing()
 
 macro(make_library name)
     add_library(${name} STATIC ${ARGN})
@@ -14,7 +15,6 @@ macro(make_library name)
 endmacro()
 
 macro(make_test name)
-    enable_testing()
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} gtest_main)
     include(GoogleTest)
