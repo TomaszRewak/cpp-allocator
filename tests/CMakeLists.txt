@@ -1,6 +1,7 @@
 make_test(
     test_allocator
-    test_allocator.cc
+    allocator_tests.cc
+    memory_slab_tests.cc
 )
 
 target_link_libraries(

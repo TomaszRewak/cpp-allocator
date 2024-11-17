@@ -3,4 +3,7 @@ make_library(
     allocator.cc
     allocator.h
     block_allocator.h
+    free_segments_manager.h
+    memory_slab.h
+    types.h
 )

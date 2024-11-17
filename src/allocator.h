@@ -6,24 +6,12 @@
 #include <cassert>
 
 #include "block_allocator.h"
+#include "free_segments_manager.h"
 
 namespace allocator {
 
 template <typename _allocator_t = in_place_block_allocator<1024>>
 class memory final {
-private:
-    struct block_header final {
-        std::byte* next_block;
-    };
-
-    struct segment_header final {
-        segment_header* previous_neighbor_segment;
-        segment_header* next_neighbor_segment;
-        segment_header* previous_free_segment;
-        segment_header* next_free_segment;
-        std::size_t data_size;
-    };
-
 public:
     std::byte* allocate(size_t size) {
         if (!_free_segments) {
@@ -31,13 +19,13 @@ public:
         }
 
         auto* const current_segment_header = _free_segments;
-        auto* const segment_data = reinterpret_cast<std::byte*>(current_segment_header + 1);
+        auto* const current_segment_data = reinterpret_cast<std::byte*>(current_segment_header + 1);
 
         assert(current_segment_header->previous_free_segment == nullptr);
         assert(current_segment_header->data_size >= size);
 
         if (current_segment_header->data_size > size + sizeof(segment_header)) {
-            auto* const remaining_segment_header = std::launder(reinterpret_cast<segment_header*>(segment_data + size));
+            auto* const remaining_segment_header = std::launder(reinterpret_cast<segment_header*>(current_segment_data + size));
 
             remaining_segment_header->previous_neighbor_segment = current_segment_header;
             remaining_segment_header->next_neighbor_segment = current_segment_header->next_neighbor_segment;
@@ -71,7 +59,7 @@ public:
             _free_segments = current_segment_header->next_free_segment;
         }
 
-        return segment_data;
+        return current_segment_data;
     }
 
     template <typename T, typename... Args>
@@ -123,6 +111,9 @@ private:
     _allocator_t _allocator{};
     std::byte* _block{ nullptr };
     segment_header* _free_segments{ nullptr };
+    free_segments_manager _free_segments_manager;
+
+    friend struct AllocatorTest;
 };
 
 template <std::size_t _size = 1024>

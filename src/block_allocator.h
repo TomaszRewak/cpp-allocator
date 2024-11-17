@@ -5,12 +5,9 @@
 #include <stdexcept>
 #include <memory>
 
-namespace allocator {
+#include "types.h"
 
-struct allocation_result {
-    std::byte* ptr;
-    std::size_t count;
-};
+namespace allocator {
 
 template <std::size_t _size>
 class in_place_block_allocator final {
