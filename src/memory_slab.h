@@ -2,8 +2,11 @@
 
 #include <cstddef>
 #include <type_traits>
+#include <algorithm>
 
 namespace allocator {
+
+
 
 template <std::size_t _size = 1024>
 struct alignas(_size) memory_slab final {
@@ -19,18 +22,18 @@ struct alignas(_size) memory_slab final {
         } free_list;
 
         struct metadata {
-            std::size_t total_size;
             std::size_t element_size;
             std::size_t data_offset;
             std::size_t mask;
         } metadata;
     } header;
 
-    std::byte data[0];
+    std::byte padding[64 - sizeof(header)];
+    std::byte data[_size - sizeof(header) - sizeof(padding)];
 
     std::size_t max_elements() const {
-        const auto max_data_size = _size - offsetof(memory_slab, data) - header.metadata.data_offset;
-        return std::max(1, max_data_size / header.metadata.element_size);
+        const auto max_data_size = sizeof(data) - header.metadata.data_offset;
+        return std::max(1ul, max_data_size / header.metadata.element_size);
     }
 
     bool is_empty() const {
@@ -40,8 +43,18 @@ struct alignas(_size) memory_slab final {
     bool is_full() const {
         return header.metadata.mask == (1 << max_elements()) - 1;
     }
+
+    bool has_element(std::size_t index) const {
+        return header.metadata.mask & (1 << index);
+    }
+
+    std::byte* get_element(std::size_t index) {
+        return data + header.metadata.data_offset + index * header.metadata.element_size;
+    }
 };
 
+static_assert(sizeof(memory_slab<64>::header) == 56);
+static_assert(offsetof(memory_slab<64>, data) == 64);
 static_assert(std::alignment_of_v<memory_slab<64>> == 64);
 static_assert(std::alignment_of_v<memory_slab<1024>> == 1024);
 

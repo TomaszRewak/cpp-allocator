@@ -3,7 +3,7 @@
 
 namespace allocator {
 
-TEST(MemorySlabTest, Allocates) {
+TEST(MemorySlabTest, EmptySlab) {
     memory_slab<1024> slab{
         .header = {
             .neighbors = {
@@ -15,13 +15,14 @@ TEST(MemorySlabTest, Allocates) {
                 .next = nullptr
             },
             .metadata = {
-                .total_size = 1024,
                 .element_size = 64,
-                .element_alignment = 64,
+                .data_offset = 0,
                 .mask = 0b0
             }
         }
     };
+
+    ASSERT_EQ(slab.max_elements(), (1024 - 64) / 64);
 }
 
 }
