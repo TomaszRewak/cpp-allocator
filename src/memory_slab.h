@@ -6,7 +6,7 @@
 
 namespace allocator {
 
-
+const auto min_required_data_block_align = alignof(std::max_align_t);
 
 template <std::size_t _size = 1024>
 struct alignas(_size) memory_slab final {
@@ -23,17 +23,16 @@ struct alignas(_size) memory_slab final {
 
         struct metadata {
             std::size_t element_size;
-            std::size_t data_offset;
             std::size_t mask;
+            bool are_elements_trivially_destructible;
         } metadata;
     } header;
 
-    std::byte padding[64 - sizeof(header)];
+    std::byte padding[sizeof(header) % min_required_data_block_align == 0 ? 0 : min_required_data_block_align - sizeof(header) % min_required_data_block_align];
     std::byte data[_size - sizeof(header) - sizeof(padding)];
 
     std::size_t max_elements() const {
-        const auto max_data_size = sizeof(data) - header.metadata.data_offset;
-        return std::max(1ul, max_data_size / header.metadata.element_size);
+        return std::max(1ul, sizeof(data) / header.metadata.element_size);
     }
 
     bool is_empty() const {
@@ -49,7 +48,11 @@ struct alignas(_size) memory_slab final {
     }
 
     std::byte* get_element(std::size_t index) {
-        return data + header.metadata.data_offset + index * header.metadata.element_size;
+        return data + index * header.metadata.element_size;
+    }
+
+    void set_element(std::size_t index) {
+        header.metadata.mask |= (1 << index);
     }
 };
 
@@ -57,5 +60,6 @@ static_assert(sizeof(memory_slab<64>::header) == 56);
 static_assert(offsetof(memory_slab<64>, data) == 64);
 static_assert(std::alignment_of_v<memory_slab<64>> == 64);
 static_assert(std::alignment_of_v<memory_slab<1024>> == 1024);
+static_assert(std::is_trivial_v<memory_slab<64>>);
 
 }

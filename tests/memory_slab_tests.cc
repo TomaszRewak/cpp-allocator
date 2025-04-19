@@ -16,13 +16,15 @@ TEST(MemorySlabTest, EmptySlab) {
             },
             .metadata = {
                 .element_size = 64,
-                .data_offset = 0,
-                .mask = 0b0
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
             }
         }
     };
 
     ASSERT_EQ(slab.max_elements(), (1024 - 64) / 64);
+    ASSERT_TRUE(slab.is_empty());
+    ASSERT_FALSE(slab.is_full());
 }
 
 }
