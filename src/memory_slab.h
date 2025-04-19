@@ -47,6 +47,10 @@ struct alignas(_size) memory_slab final {
         return header.metadata.mask & (1 << index);
     }
 
+    std::size_t get_first_free_element() const {
+        return std::countr_one(header.metadata.mask);
+    }
+
     std::byte* get_element(std::size_t index) {
         return data + index * header.metadata.element_size;
     }
@@ -54,12 +58,19 @@ struct alignas(_size) memory_slab final {
     void set_element(std::size_t index) {
         header.metadata.mask |= (1 << index);
     }
+
+    void clear_element(std::size_t index) {
+        header.metadata.mask &= ~(1 << index);
+    }
 };
 
-static_assert(sizeof(memory_slab<64>::header) == 56);
-static_assert(offsetof(memory_slab<64>, data) == 64);
 static_assert(std::alignment_of_v<memory_slab<64>> == 64);
 static_assert(std::alignment_of_v<memory_slab<1024>> == 1024);
 static_assert(std::is_trivial_v<memory_slab<64>>);
+
+// Compiler-specific sanity checks
+static_assert(sizeof(min_required_data_block_align) == 8);
+static_assert(sizeof(memory_slab<64>::header) == 56);
+static_assert(offsetof(memory_slab<64>, data) == 64);
 
 }

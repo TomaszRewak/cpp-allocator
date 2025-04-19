@@ -6,15 +6,9 @@ namespace allocator {
 TEST(MemorySlabTest, EmptySlab) {
     memory_slab<1024> slab{
         .header = {
-            .neighbors = {
-                .previous = nullptr,
-                .next = nullptr
-            },
-            .free_list = {
-                .previous = nullptr,
-                .next = nullptr
-            },
-            .metadata = {
+            .neighbors {},
+            .free_list {},
+            .metadata {
                 .element_size = 64,
                 .mask = 0b0,
                 .are_elements_trivially_destructible = true
@@ -25,6 +19,158 @@ TEST(MemorySlabTest, EmptySlab) {
     ASSERT_EQ(slab.max_elements(), (1024 - 64) / 64);
     ASSERT_TRUE(slab.is_empty());
     ASSERT_FALSE(slab.is_full());
+    ASSERT_EQ(slab.get_first_free_element(), 0);
+}
+
+TEST(MemorySlabTest, SetsFirstElements) {
+    memory_slab<1024> slab{
+        .header {
+            .neighbors {},
+            .free_list {},
+            .metadata {
+                .element_size = 64,
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
+            }
+        }
+    };
+
+    slab.set_element(0);
+
+    ASSERT_TRUE(slab.has_element(0));
+    ASSERT_FALSE(slab.has_element(2));
+    ASSERT_FALSE(slab.is_empty());
+    ASSERT_FALSE(slab.is_full());
+    ASSERT_EQ(slab.get_first_free_element(), 1);
+}
+
+TEST(MemorySlabTest, SetsThirdElement) {
+    memory_slab<1024> slab{
+        .header {
+            .neighbors {},
+            .free_list {},
+            .metadata {
+                .element_size = 64,
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
+            }
+        }
+    };
+
+    slab.set_element(2);
+
+    ASSERT_FALSE(slab.has_element(0));
+    ASSERT_TRUE(slab.has_element(2));
+    ASSERT_FALSE(slab.is_empty());
+    ASSERT_FALSE(slab.is_full());
+    ASSERT_EQ(slab.get_first_free_element(), 0);
+}
+
+TEST(MemorySlabTest, SetsAllElements) {
+    memory_slab<1024> slab{
+        .header {
+            .neighbors {},
+            .free_list {},
+            .metadata {
+                .element_size = 64,
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
+            }
+        }
+    };
+
+    for (std::size_t i = 0; i < slab.max_elements(); ++i) {
+        slab.set_element(i);
+    }
+
+    ASSERT_FALSE(slab.is_empty());
+    ASSERT_TRUE(slab.is_full());
+}
+
+TEST(MemorySlabTest, ClearsFirstElement) {
+    memory_slab<1024> slab{
+        .header {
+            .neighbors {},
+            .free_list {},
+            .metadata {
+                .element_size = 64,
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
+            }
+        }
+    };
+
+    slab.set_element(0);
+    slab.clear_element(0);
+
+    ASSERT_FALSE(slab.has_element(0));
+    ASSERT_TRUE(slab.is_empty());
+    ASSERT_FALSE(slab.is_full());
+    ASSERT_EQ(slab.get_first_free_element(), 0);
+}
+
+TEST(MemorySlabTest, ClearsOneElementOfFullSlab) {
+    memory_slab<1024> slab{
+        .header {
+            .neighbors {},
+            .free_list {},
+            .metadata {
+                .element_size = 64,
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
+            }
+        }
+    };
+
+    for (std::size_t i = 0; i < slab.max_elements(); ++i) {
+        slab.set_element(i);
+    }
+
+    ASSERT_TRUE(slab.is_full());
+
+    slab.clear_element(5);
+
+    ASSERT_FALSE(slab.is_empty());
+    ASSERT_FALSE(slab.is_full());
+    ASSERT_EQ(slab.get_first_free_element(), 5);
+}
+
+TEST(MemorySlabTest, GettingEmptyElementDoesNotChangeMask) {
+    memory_slab<1024> slab{
+        .header {
+            .neighbors {},
+            .free_list {},
+            .metadata {
+                .element_size = 64,
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
+            }
+        }
+    };
+
+    slab.get_element(0);
+
+    ASSERT_EQ(slab.get_first_free_element(), 0);
+}
+
+TEST(MemorySlabTest, ReturnsNextFreeElement) {
+    memory_slab<1024> slab{
+        .header {
+            .neighbors {},
+            .free_list {},
+            .metadata {
+                .element_size = 64,
+                .mask = 0b0,
+                .are_elements_trivially_destructible = true
+            }
+        }
+    };
+
+    slab.set_element(0);
+    slab.set_element(1);
+    slab.set_element(3);
+
+    ASSERT_EQ(slab.get_first_free_element(), 2);
 }
 
 }
