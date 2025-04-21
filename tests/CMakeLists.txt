@@ -1,6 +1,7 @@
 make_test(
     test_allocator
-    allocator_tests.cc
+    memory_destructor_tests.cc
+    memory_tests.cc
     memory_slab_tests.cc
 )
 

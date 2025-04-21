@@ -2,25 +2,24 @@
 
 #include <array>
 #include <optional>
+#include <limits>
 
-#include "types.h"
+#include "memory_slab.h"
 
 namespace allocator {
 
+template <std::size_t _size = 1024>
 class free_segments_manager final {
 private:
-    //    static constexpr std::size_t _max_buckets = std::numeric_limits<std::size_t>::digits;
+    static constexpr std::size_t _max_buckets = std::numeric_limits<std::size_t>::digits;
 
 public:
 
-
 private:
-    // std::size_t get_bucket_index(std::size_t size) const {
-    //     return std::bit_width(size);
-    // }
+    std::array<memory_slab<_size>*, _max_buckets> _free_segments{};
+    std::uint64_t _free_segnets_mask{ 0 };
 
-
- //   std::array<segment_header*, _max_buckets> _free_segments{};
+    static_assert(_max_buckets <= sizeof(_free_segnets_mask) * 8, "Too many buckets for free segments manager");
 };
 
 }

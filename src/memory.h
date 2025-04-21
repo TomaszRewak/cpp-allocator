@@ -70,6 +70,11 @@ public:
 
     template <typename T>
     void deallocate(const T* const data) {
+        if (!data)
+            return;
+
+        data->~T();
+
         auto* const freed_segment_header = std::launder(const_cast<segment_header*>(reinterpret_cast<const segment_header*>(data) - 1));
 
         freed_segment_header->next_free_segment = _free_segments;
@@ -79,8 +84,6 @@ public:
             freed_segment_header->next_free_segment->previous_free_segment = freed_segment_header;
 
         _free_segments = freed_segment_header;
-
-        data->~T();
     }
 
 private:
@@ -111,7 +114,7 @@ private:
     _allocator_t _allocator{};
     std::byte* _block{ nullptr };
     segment_header* _free_segments{ nullptr };
-    free_segments_manager _free_segments_manager;
+    //free_segments_manager _free_segments_manager;
 
     friend struct AllocatorTest;
 };

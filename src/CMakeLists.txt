@@ -1,7 +1,7 @@
 make_library(
     allocator
-    allocator.cc
-    allocator.h
+    memory.cc
+    memory.h
     block_allocator.h
     free_segments_manager.h
     memory_slab.h
