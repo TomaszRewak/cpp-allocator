@@ -4,6 +4,7 @@ make_library(
     memory.h
     block_allocator.h
     free_segments_manager.h
+    memory_segment.h
     memory_slab.h
     types.h
 )
