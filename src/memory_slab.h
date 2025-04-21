@@ -24,7 +24,6 @@ struct alignas(_size) memory_slab final {
         struct metadata {
             std::size_t element_size;
             std::size_t mask;
-            bool are_elements_trivially_destructible;
         } metadata;
     } header;
 
@@ -70,7 +69,7 @@ static_assert(std::is_trivial_v<memory_slab<64>>);
 
 // Compiler-specific sanity checks
 static_assert(sizeof(min_required_data_block_align) == 8);
-static_assert(sizeof(memory_slab<64>::header) == 56);
-static_assert(offsetof(memory_slab<64>, data) == 64);
+static_assert(sizeof(memory_slab<64>::header) == 48);
+static_assert(offsetof(memory_slab<64>, data) == 48);
 
 }

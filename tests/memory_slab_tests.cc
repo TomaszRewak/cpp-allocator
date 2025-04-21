@@ -10,8 +10,7 @@ TEST(MemorySlabTest, EmptySlab) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
@@ -29,8 +28,7 @@ TEST(MemorySlabTest, SetsFirstElements) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
@@ -51,8 +49,7 @@ TEST(MemorySlabTest, SetsThirdElement) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
@@ -73,8 +70,7 @@ TEST(MemorySlabTest, SetsAllElements) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
@@ -94,8 +90,7 @@ TEST(MemorySlabTest, ClearsFirstElement) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
@@ -116,8 +111,7 @@ TEST(MemorySlabTest, ClearsOneElementOfFullSlab) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
@@ -142,8 +136,7 @@ TEST(MemorySlabTest, GettingEmptyElementDoesNotChangeMask) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
@@ -160,8 +153,7 @@ TEST(MemorySlabTest, ReturnsNextFreeElement) {
             .free_list {},
             .metadata {
                 .element_size = 64,
-                .mask = 0b0,
-                .are_elements_trivially_destructible = true
+                .mask = 0b0
             }
         }
     };
