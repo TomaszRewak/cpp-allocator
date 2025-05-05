@@ -15,6 +15,7 @@ private:
 
 public:
 
+
 private:
     std::array<memory_slab<_size>*, _max_buckets> _free_segments{};
     std::uint64_t _free_segnets_mask{ 0 };
