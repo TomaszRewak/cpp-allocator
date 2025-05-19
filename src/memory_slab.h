@@ -6,8 +6,6 @@
 
 namespace allocator {
 
-const auto min_required_data_block_align = alignof(std::max_align_t);
-
 template <std::size_t _size = 1024>
 struct alignas(_size) memory_slab final {
     struct header final {
@@ -28,8 +26,14 @@ struct alignas(_size) memory_slab final {
         } metadata;
     } header;
 
-    std::byte padding[sizeof(header) % min_required_data_block_align == 0 ? 0 : min_required_data_block_align - sizeof(header) % min_required_data_block_align];
-    std::byte data[_size - sizeof(header) - sizeof(padding)];
+    const static auto memory_slab_alignment = _size;
+    const static auto min_required_data_block_align = alignof(std::max_align_t);
+    const static auto data_block_padding = sizeof(header) % min_required_data_block_align == 0 ? 0 : min_required_data_block_align - sizeof(header) % min_required_data_block_align;
+    const static auto data_block_offset = sizeof(header) + data_block_padding;
+    const static auto data_block_size = _size - data_block_offset;
+
+    std::byte padding[data_block_padding];
+    std::byte data[data_block_size];
 
     std::size_t max_elements() const {
         return std::max(1ul, sizeof(data) / header.metadata.element_size);
@@ -69,7 +73,7 @@ static_assert(std::alignment_of_v<memory_slab<1024>> == 1024);
 static_assert(std::is_trivial_v<memory_slab<64>>);
 
 // Compiler-specific sanity checks
-static_assert(sizeof(min_required_data_block_align) == 8);
+static_assert(sizeof(memory_slab<128>::min_required_data_block_align) == 8);
 static_assert(sizeof(memory_slab<128>::header) == 56);
 static_assert(offsetof(memory_slab<128>, data) == 64);
 
