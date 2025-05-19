@@ -6,11 +6,17 @@
 #include <cassert>
 
 #include "block_allocator.h"
-#include "free_segments_manager.h"
+#include "free_memory_manager.h"
 
 namespace allocator {
 
-template <typename _allocator_t = in_place_block_allocator<1024>>
+template <typename _allocator_t>
+concept allocator = requires(_allocator_t allocator, std::byte * data, std::size_t size) {
+    { allocator.allocate_at_least(size) } -> std::same_as<allocation_result>;
+    { allocator.deallocate(data) };
+};
+
+template <allocator _allocator_t, std::size_t _slab_size = 1024>
 class memory final {
 public:
     std::byte* allocate(size_t size) {
@@ -114,12 +120,12 @@ private:
     _allocator_t _allocator{};
     std::byte* _block{ nullptr };
     segment_header* _free_segments{ nullptr };
-    //free_segments_manager _free_segments_manager;
+    free_memory_manager<_slab_size> _free_memory_manager{};
 
     friend struct AllocatorTest;
 };
 
-template <std::size_t _size = 1024>
-using in_place_memory = memory<in_place_block_allocator<_size>>;
+template <std::size_t _size = 16 * 1024, std::size_t _slab_size = 1024>
+using in_place_memory = memory<in_place_block_allocator<_size>, _slab_size>;
 
 }

@@ -9,7 +9,7 @@
 namespace allocator {
 
 template <std::size_t _size = 1024>
-class free_segments_manager final {
+class free_memory_manager final {
 private:
     static constexpr std::size_t _max_buckets = std::numeric_limits<std::size_t>::digits;
 

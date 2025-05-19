@@ -4,14 +4,14 @@
 namespace allocator {
 
 TEST(MemoryTests, Allocates) {
-    memory memory;
+    in_place_memory memory;
     const auto* value = memory.allocate<int32_t>(42);
 
     ASSERT_EQ(*value, 42);
 }
 
 TEST(MemoryTests, AllocatesMultipleObjects) {
-    memory memory;
+    in_place_memory memory;
     const auto* value1 = memory.allocate<int32_t>(42);
     const auto* value2 = memory.allocate<int32_t>(43);
 
@@ -20,7 +20,7 @@ TEST(MemoryTests, AllocatesMultipleObjects) {
 }
 
 TEST(MemoryTests, ReusesFreedMemory) {
-    memory memory;
+    in_place_memory memory;
     const auto* value1 = memory.allocate<int32_t>(42);
     memory.deallocate(value1);
     const auto* value2 = memory.allocate<int32_t>(43);
@@ -30,7 +30,7 @@ TEST(MemoryTests, ReusesFreedMemory) {
 }
 
 TEST(MemoryTests, ReusesFreedMemoryGaps) {
-    memory memory;
+    in_place_memory memory;
     const auto* value1 = memory.allocate<int32_t>(42);
     const auto* value2 = memory.allocate<int32_t>(43);
     const auto* value3 = memory.allocate<int32_t>(44);
@@ -42,7 +42,7 @@ TEST(MemoryTests, ReusesFreedMemoryGaps) {
 }
 
 TEST(MemoryTests, AllocatesBiggerObjectAfterSmaller) {
-    memory memory;
+    in_place_memory memory;
     const auto* value1 = memory.allocate<int32_t>(42);
     const auto* value2 = memory.allocate<int64_t>(43);
 
@@ -51,7 +51,7 @@ TEST(MemoryTests, AllocatesBiggerObjectAfterSmaller) {
 }
 
 TEST(MemoryTests, AllocatesBiggerObjectAfterFreeingSmaller) {
-    memory memory;
+    in_place_memory memory;
     const auto* value1 = memory.allocate<int32_t>(42);
     memory.deallocate(value1);
     const auto* value2 = memory.allocate<int64_t>(43);

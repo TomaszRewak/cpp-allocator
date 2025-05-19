@@ -39,7 +39,7 @@ private:
 };
 
 TEST(MemoryDestructorTest, DoesNotDestructNewObjects) {
-    memory memory;
+    in_place_memory memory;
     std::vector<int32_t> destruction_stack;
 
     const auto* value = memory.allocate<DestructibleClassA>(42, destruction_stack);
@@ -49,7 +49,7 @@ TEST(MemoryDestructorTest, DoesNotDestructNewObjects) {
 
 
 TEST(MemoryDestructorTest, DestructsSimpleObject) {
-    memory memory;
+    in_place_memory memory;
     std::vector<int32_t> destruction_stack;
 
     const auto* value = memory.allocate<DestructibleClassA>(42, destruction_stack);
@@ -59,7 +59,7 @@ TEST(MemoryDestructorTest, DestructsSimpleObject) {
 }
 
 TEST(MemoryDestructorTest, DestructsMultipleObjects) {
-    memory memory;
+    in_place_memory memory;
     std::vector<int32_t> destruction_stack;
 
     const auto* value1 = memory.allocate<DestructibleClassA>(42, destruction_stack);
@@ -71,7 +71,7 @@ TEST(MemoryDestructorTest, DestructsMultipleObjects) {
 }
 
 TEST(MemoryDestructorTest, DestructsDerivedObject) {
-    memory memory;
+    in_place_memory memory;
     std::vector<int32_t> destruction_stack;
 
     const auto* value = memory.allocate<DestructibleClassAB>(44, 45, 46, destruction_stack);
@@ -81,7 +81,7 @@ TEST(MemoryDestructorTest, DestructsDerivedObject) {
 }
 
 TEST(MemoryDestructorTest, DestructsDerivedObjectByFirstBaseClassPointer) {
-    memory memory;
+    in_place_memory memory;
     std::vector<int32_t> destruction_stack;
 
     const auto* value = memory.allocate<DestructibleClassAB>(44, 45, 46, destruction_stack);
@@ -92,7 +92,7 @@ TEST(MemoryDestructorTest, DestructsDerivedObjectByFirstBaseClassPointer) {
 }
 
 TEST(MemoryDestructorTest, DestructsDerivedObjectBySecondBaseClassPointer) {
-    memory memory;
+    in_place_memory memory;
     std::vector<int32_t> destruction_stack;
 
     const auto* value = memory.allocate<DestructibleClassAB>(44, 45, 46, destruction_stack);

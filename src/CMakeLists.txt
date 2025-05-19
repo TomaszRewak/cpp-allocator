@@ -3,8 +3,7 @@ make_library(
     memory.cc
     memory.h
     block_allocator.h
-    free_segments_manager.h
-    memory_segment.h
+    free_memory_manager.h
     memory_slab.h
     types.h
 )
