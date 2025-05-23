@@ -42,7 +42,7 @@ public:
 
     void* get_memory_block(std::size_t size) {
         const auto min_bucket_index = std::bit_width(size);
-        const auto bucket_index = std::countr_one(_free_segnets_mask >> min_bucket_index)
+        const auto bucket_index = std::countr_one(_free_segnets_mask >> min_bucket_index) + min_bucket_index;
     }
 
     void release_memory_block(void* const data) {
