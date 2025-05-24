@@ -36,7 +36,7 @@ public:
     }
 
     void* get_memory_block(std::size_t size) {
-        const auto min_bucket_index = std::bit_width(size);
+        const auto min_bucket_index = required_size_to_sufficient_bucket_index(size);
 
         if ((_free_segments_mask & (1 << min_bucket_index)) != 0) {
             return allocate_from_bucket(min_bucket_index, size);

@@ -30,8 +30,13 @@ protected:
     }
 
     template <std::size_t _slab_size>
-    void ASSERT_BUCKET_EQ(const free_memory_manager<_slab_size>& manager, std::size_t size, memory_slab<_slab_size>* slab) {
+    void ASSERT_BUCKET_EQ(const free_memory_manager<_slab_size>& manager, std::size_t size, const memory_slab<_slab_size>* slab) {
         ASSERT_EQ(manager._free_segments[manager.block_size_to_bucket_index(size)], slab);
+    }
+
+    template <std::size_t _slab_size>
+    void ASSERT_BUCKET_EQ(const free_memory_manager<_slab_size>& manager, std::size_t size, nullptr_t) {
+        ASSERT_EQ(manager._free_segments[manager.block_size_to_bucket_index(size)], nullptr);
     }
 
     template <std::size_t _slab_size>
@@ -68,7 +73,7 @@ TEST_F(FreeMemoryManagerTest, CannotAddNonEmptySlab) {
     ASSERT_THROW(manager.add_memory_segment(slabs), std::runtime_error);
 }
 
-TEST_F(FreeMemoryManagerTest, AllocateSmallElementFromEmptySlab) {
+TEST_F(FreeMemoryManagerTest, AllocateSmallElement) {
     memory_slab<256> slabs[10];
     launder_slab(slabs, 10);
 
@@ -97,6 +102,108 @@ TEST_F(FreeMemoryManagerTest, AllocateSmallElementFromEmptySlab) {
     ASSERT_EQ(slabs[0].header.free_list.next, nullptr);
     ASSERT_EQ(slabs[1].header.free_list.previous, nullptr);
     ASSERT_EQ(slabs[1].header.free_list.next, nullptr);
+}
+
+TEST_F(FreeMemoryManagerTest, AllocateMultipleSmallElementsInSameSlab) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+
+    void* ptr1 = manager.get_memory_block(5);
+    void* ptr2 = manager.get_memory_block(6);
+    void* ptr3 = manager.get_memory_block(7);
+
+    ASSERT_NE(ptr1, nullptr);
+    ASSERT_NE(ptr2, nullptr);
+    ASSERT_NE(ptr3, nullptr);
+    ASSERT_IS_IN_SLAB(ptr1, &slabs[0]);
+    ASSERT_IS_IN_SLAB(ptr2, &slabs[0]);
+    ASSERT_IS_IN_SLAB(ptr3, &slabs[0]);
+    ASSERT_MASK_EQ(manager, 8, 256 * 9 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 8, &slabs[0]);
+    ASSERT_BUCKET_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset, &slabs[1]);
+    ASSERT_TRUE(slabs[0].has_element(0));
+    ASSERT_TRUE(slabs[0].has_element(1));
+    ASSERT_TRUE(slabs[0].has_element(2));
+    ASSERT_FALSE(slabs[0].has_element(3));
+    ASSERT_FALSE(slabs[0].is_full());
+}
+
+TEST_F(FreeMemoryManagerTest, AllocateSmallElementsInDifferentSlabs) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+
+    void* ptr1 = manager.get_memory_block(4);
+    void* ptr2 = manager.get_memory_block(5);
+
+    ASSERT_NE(ptr1, nullptr);
+    ASSERT_NE(ptr2, nullptr);
+    ASSERT_IS_IN_SLAB(ptr1, &slabs[0]);
+    ASSERT_IS_IN_SLAB(ptr2, &slabs[1]);
+    ASSERT_MASK_EQ(manager, 4, 8, 256 * 8 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 4, &slabs[0]);
+    ASSERT_BUCKET_EQ(manager, 8, &slabs[1]);
+    ASSERT_BUCKET_EQ(manager, 256 * 8 - memory_slab<256>::data_block_offset, &slabs[2]);
+    ASSERT_TRUE(slabs[0].has_element(0));
+    ASSERT_TRUE(slabs[1].has_element(0));
+}
+
+TEST_F(FreeMemoryManagerTest, FillSlabWithSmallElements) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+
+    do {
+        void* ptr = manager.get_memory_block(8);
+        ASSERT_NE(ptr, nullptr);
+        ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
+    } while (!slabs[0].is_full());
+
+    ASSERT_MASK_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 8, nullptr);
+    ASSERT_BUCKET_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset, &slabs[1]);
+    ASSERT_TRUE(slabs[0].is_full());
+}
+
+TEST_F(FreeMemoryManagerTest, FillSlabWithSmallElementsAndThenAddMore) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+
+    do {
+        void* ptr = manager.get_memory_block(8);
+        ASSERT_NE(ptr, nullptr);
+        ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
+    } while (!slabs[0].is_full());
+
+    void* ptr2 = manager.get_memory_block(8);
+
+    ASSERT_NE(ptr2, nullptr);
+    ASSERT_IS_IN_SLAB(ptr2, &slabs[1]);
+    ASSERT_MASK_EQ(manager, 8, 256 * 8 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 8, &slabs[1]);
+    ASSERT_BUCKET_EQ(manager, 256 * 8 - memory_slab<256>::data_block_offset, &slabs[2]);
+    ASSERT_TRUE(slabs[0].is_full());
+    ASSERT_FALSE(slabs[1].is_full());
+    ASSERT_TRUE(slabs[1].has_element(0));
+    ASSERT_FALSE(slabs[1].has_element(1));
+    ASSERT_EQ(slabs[0].header.metadata.element_size, 8);
+    ASSERT_EQ(slabs[1].header.metadata.element_size, 8);
+    ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.neighbors.next, &slabs[1]);
+    ASSERT_EQ(slabs[1].header.neighbors.previous, &slabs[0]);
+    ASSERT_EQ(slabs[1].header.neighbors.next, &slabs[2]);
+    ASSERT_EQ(slabs[2].header.neighbors.previous, &slabs[1]);
+    ASSERT_EQ(slabs[2].header.neighbors.next, nullptr);
 }
 
 }
