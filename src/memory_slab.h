@@ -8,6 +8,8 @@ namespace allocator {
 
 template <std::size_t _size = 1024>
 struct alignas(_size) memory_slab final {
+    static_assert((_size& (_size - 1)) == 0, "Memory slab size must be a power of two");
+
     struct header final {
         struct neighbors final {
             memory_slab* previous;

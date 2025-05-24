@@ -1,0 +1,102 @@
+#include "src/free_memory_manager.h"
+#include "src/memory_slab.h"
+#include <gtest/gtest.h>
+#include <cstdint>
+#include <vector>
+#include <set>
+
+namespace allocator {
+
+class FreeMemoryManagerTest : public ::testing::Test {
+protected:
+    template <std::size_t _slab_size>
+    void launder_slab(memory_slab<_slab_size>* slab, const std::size_t span) {
+        auto* aligned_slab = std::launder(slab);
+        aligned_slab->header.metadata.free_memory_manager = nullptr;
+        aligned_slab->header.metadata.mask = 0;
+        aligned_slab->header.metadata.element_size = span * _slab_size - memory_slab<_slab_size>::data_block_offset;
+        aligned_slab->header.neighbors.previous = nullptr;
+        aligned_slab->header.neighbors.next = nullptr;
+        aligned_slab->header.free_list.previous = nullptr;
+        aligned_slab->header.free_list.next = nullptr;
+
+        free_memory_manager<256> manager;
+        manager._free_segments_mask = 2;
+    }
+
+    template <std::size_t _slab_size, typename... _sizes>
+    void ASSERT_MASK_EQ(const free_memory_manager<_slab_size>& manager, _sizes... sizes) {
+        ASSERT_EQ(manager._free_segments_mask, ((1ull << manager.block_size_to_bucket_index(sizes)) | ... | 0));
+    }
+
+    template <std::size_t _slab_size>
+    void ASSERT_BUCKET_EQ(const free_memory_manager<_slab_size>& manager, std::size_t size, memory_slab<_slab_size>* slab) {
+        ASSERT_EQ(manager._free_segments[manager.block_size_to_bucket_index(size)], slab);
+    }
+
+    template <std::size_t _slab_size>
+    void ASSERT_IS_IN_SLAB(void* ptr, memory_slab<_slab_size>* slab) {
+        ASSERT_EQ(reinterpret_cast<std::uintptr_t>(ptr) / _slab_size * _slab_size, reinterpret_cast<std::uintptr_t>(slab));
+    }
+};
+
+// Basic functionality tests
+TEST_F(FreeMemoryManagerTest, AddEmptySlab) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+
+    ASSERT_MASK_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset, slabs);
+    ASSERT_EQ(slabs[0].header.metadata.element_size, 256 * 10 - memory_slab<256>::data_block_offset);
+    ASSERT_EQ(slabs[0].header.metadata.free_memory_manager, &manager);
+    ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.neighbors.next, nullptr);
+    ASSERT_EQ(slabs[0].header.free_list.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.free_list.next, nullptr);
+}
+
+TEST_F(FreeMemoryManagerTest, CannotAddNonEmptySlab) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+    slabs[0].set_element(0);
+
+    free_memory_manager<256> manager;
+
+    ASSERT_THROW(manager.add_memory_segment(slabs), std::runtime_error);
+}
+
+TEST_F(FreeMemoryManagerTest, AllocateSmallElementFromEmptySlab) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+    void* ptr = manager.get_memory_block(8);
+
+    ASSERT_NE(ptr, nullptr);
+    ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
+    ASSERT_MASK_EQ(manager, 8, 256 * 9 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 8, &slabs[0]);
+    ASSERT_BUCKET_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset, &slabs[1]);
+    ASSERT_EQ(slabs[0].header.metadata.free_memory_manager, &manager);
+    ASSERT_EQ(slabs[1].header.metadata.free_memory_manager, &manager);
+    ASSERT_TRUE(slabs[0].has_element(0));
+    ASSERT_FALSE(slabs[0].is_full());
+    ASSERT_TRUE(slabs[1].is_empty());
+    ASSERT_EQ(slabs[0].header.metadata.element_size, 8);
+    ASSERT_EQ(slabs[1].header.metadata.element_size, 256 * 9 - memory_slab<256>::data_block_offset);
+    ASSERT_EQ(slabs[0].header.metadata.mask, 1);
+    ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.neighbors.next, &slabs[1]);
+    ASSERT_EQ(slabs[1].header.neighbors.previous, &slabs[0]);
+    ASSERT_EQ(slabs[1].header.neighbors.next, nullptr);
+    ASSERT_EQ(slabs[0].header.free_list.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.free_list.next, nullptr);
+    ASSERT_EQ(slabs[1].header.free_list.previous, nullptr);
+    ASSERT_EQ(slabs[1].header.free_list.next, nullptr);
+}
+
+}

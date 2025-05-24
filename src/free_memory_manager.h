@@ -3,6 +3,8 @@
 #include <array>
 #include <optional>
 #include <limits>
+#include <stdexcept>
+#include <cstdint>
 
 #include "memory_slab.h"
 
@@ -15,11 +17,13 @@ private:
 
 public:
     void add_memory_segment(memory_slab<_slab_size>* const slab) {
-        if (slab->is_empty()) {
-            // TODO: merge with neighbour
-            // slab->header.metadata.free_memory_manager = this;
-            throw std::runtime_error("not supported yet");
+        slab->header.metadata.free_memory_manager = this;
+
+        if (!slab->is_empty()) {
+            throw std::runtime_error("attempting to add a non-empty slab to free list");
         }
+
+        merge_neighbors_into_slab(slab);
 
         const auto element_size = slab->header.metadata.element_size;
         const auto bucket_index = std::bit_width(element_size);
@@ -28,28 +32,135 @@ public:
             throw std::runtime_error("element size is too large");
         }
 
-        auto*& bucket = _free_segments[bucket_index];
-
-        if (bucket != nullptr) {
-            bucket->header.free_list.previous = slab;
-        }
-
-        slab->header.free_list.next = bucket;
-        slab->header.free_list.previous = nullptr;
-        bucket = slab;
-        _free_segnets_mask |= (1 << bucket_index);
+        add_to_bucket(slab);
     }
 
     void* get_memory_block(std::size_t size) {
         const auto min_bucket_index = std::bit_width(size);
-        const auto bucket_index = std::countr_one(_free_segnets_mask >> min_bucket_index) + min_bucket_index;
+
+        if ((_free_segments_mask & (1 << min_bucket_index)) != 0) {
+            return allocate_from_bucket(min_bucket_index, size);
+        }
+
+        if (size <= memory_slab<_slab_size>::data_block_size / 2) {
+            const auto min_full_slab_size = std::bit_width(memory_slab<_slab_size>::data_block_size);
+
+            if ((_free_segments_mask >> min_full_slab_size) == 0) {
+                return nullptr;
+            }
+
+            const auto bucket_index = std::countr_zero(_free_segments_mask >> min_full_slab_size) + min_full_slab_size;
+
+            if (bucket_index >= _max_buckets) {
+                throw std::runtime_error("bucket index out of range");
+            }
+
+            auto* slab = _free_segments[bucket_index];
+            if (slab == nullptr) {
+                throw std::runtime_error("bucket is empty despite being marked as occupied");
+            }
+
+            remove_from_free_list(slab, bucket_index);
+            return create_partitioned_slab(slab, size);
+        }
+        else {
+            if ((_free_segments_mask >> min_bucket_index) == 0) {
+                return nullptr;
+            }
+
+            const auto bucket_index = std::countr_zero(_free_segments_mask >> min_bucket_index) + min_bucket_index;
+
+            if (bucket_index >= _max_buckets) {
+                return nullptr;
+            }
+
+            auto* slab = _free_segments[bucket_index];
+            if (slab == nullptr) {
+                return nullptr;
+            }
+
+            remove_from_free_list(slab, bucket_index);
+
+            auto remaining_size = slab->header.metadata.element_size - size;
+            if (remaining_size >= (_slab_size + memory_slab<_slab_size>::data_block_offset)) {
+                return split_and_allocate(slab, size);
+            }
+
+            slab->set_element(0);
+            return slab->get_element(0);
+        }
+    }
+
+    void* allocate_from_bucket(std::size_t bucket_index, std::size_t size) {
+        if (bucket_index >= _max_buckets) {
+            throw std::runtime_error("bucket index out of range");
+        }
+
+        auto* slab = _free_segments[bucket_index];
+        if (slab == nullptr) {
+            throw std::runtime_error("bucket is empty despite being marked as occupied");
+        }
+
+        if (slab->max_elements() > 1) {
+            return allocate_from_slab(slab, bucket_index);
+        }
+
+        remove_from_free_list(slab, bucket_index);
+        slab->set_element(0);
+        return slab->get_element(0);
+    }
+
+    void* allocate_from_slab(memory_slab<_slab_size>* slab, std::size_t bucket_index) {
+        const auto element_index = slab->get_first_free_element();
+
+        if (element_index >= slab->max_elements()) {
+            return nullptr;
+        }
+
+        slab->set_element(element_index);
+
+        if (slab->is_full()) {
+            remove_from_free_list(slab, bucket_index);
+        }
+
+        return slab->get_element(element_index);
+    }
+
+    void* create_partitioned_slab(memory_slab<_slab_size>* slab, std::size_t request_size) {
+        const auto original_slab_size = slab->header.metadata.element_size;
+
+        if (original_slab_size > memory_slab<_slab_size>::data_block_size) {
+
+            split_slab_at_offset(slab, _slab_size);
+        }
+
+        const auto bucket_index = required_size_to_sufficient_bucket_index(request_size);
+        const std::size_t bucket_element_size = (1ULL << bucket_index);
+
+        slab->header.metadata.element_size = bucket_element_size;
+        slab->header.metadata.mask = 0;
+
+        slab->set_element(0);
+
+        if (slab->is_full()) {
+            throw std::runtime_error("partitioned slab should never be full after allocating one element");
+        }
+
+        if (!slab->is_full()) {
+            add_to_bucket(slab);
+        }
+
+        return slab->get_element(0);
     }
 
     void release_memory_block(void* const data) {
-        auto* const slab_aligned_ptr = data % memory_slab<_slab_size>::memory_slab_alignment;
+        auto* const slab_aligned_ptr = reinterpret_cast<void*>(
+            reinterpret_cast<std::uintptr_t>(data) & ~(memory_slab<_slab_size>::memory_slab_alignment - 1));
         auto* const slab = std::launder(reinterpret_cast<memory_slab<_slab_size>*>(slab_aligned_ptr));
         const auto element_size = slab->header.metadata.element_size;
-        const auto element_offset = static_cast<std::size_t>(data - slab_aligned_ptr) - memory_slab<_slab_size>::data_block_offset;
+        const auto element_offset = static_cast<std::size_t>(
+            reinterpret_cast<std::byte*>(data) - reinterpret_cast<std::byte*>(slab_aligned_ptr)
+            ) - memory_slab<_slab_size>::data_block_offset;
         const auto element_index = element_offset / element_size;
         const auto was_full = slab->is_full();
 
@@ -59,16 +170,194 @@ public:
 
         slab->clear_element(element_index);
 
-        if (was_full) {
+        if (slab->is_empty()) {
+
+            if (slab->header.metadata.element_size <= memory_slab<_slab_size>::data_block_size) {
+                slab->header.metadata.element_size = memory_slab<_slab_size>::data_block_size;
+            }
             add_memory_segment(slab);
+        }
+
+        else if (was_full) {
+
+            const auto bucket_index = std::bit_width(element_size);
+            add_to_bucket(slab);
         }
     }
 
 private:
-    std::array<memory_slab<_slab_size>*, _max_buckets> _free_segments{};
-    std::uint64_t _free_segnets_mask{ 0 };
+    void split_slab_at_offset(memory_slab<_slab_size>* slab, std::size_t split_offset) {
+        if (split_offset % _slab_size != 0) {
+            throw std::runtime_error("split offset must be aligned to slab size");
+        }
+        if (slab->header.metadata.element_size + memory_slab<_slab_size>::data_block_offset == split_offset) {
+            throw std::runtime_error("cannot split slab at its full size");
+        }
 
-    static_assert(_max_buckets <= sizeof(_free_segnets_mask) * 8, "Too many buckets for free segments manager");
+        const auto original_element_size = slab->header.metadata.element_size;
+        const auto remaining_element_size = original_element_size - split_offset;
+
+        auto* slab_ptr = reinterpret_cast<std::byte*>(slab);
+        auto* remaining_slab_ptr = slab_ptr + split_offset;
+        auto* remaining_slab = std::launder(reinterpret_cast<memory_slab<_slab_size>*>(remaining_slab_ptr));
+
+        slab->header.metadata.element_size = split_offset - memory_slab<_slab_size>::data_block_offset;
+
+        remaining_slab->header.metadata.element_size = remaining_element_size;
+        remaining_slab->header.metadata.mask = 0;
+        remaining_slab->header.metadata.free_memory_manager = slab->header.metadata.free_memory_manager;
+
+        remaining_slab->header.neighbors.previous = slab;
+        remaining_slab->header.neighbors.next = slab->header.neighbors.next;
+
+        if (slab->header.neighbors.next != nullptr) {
+            slab->header.neighbors.next->header.neighbors.previous = remaining_slab;
+        }
+
+        slab->header.neighbors.next = remaining_slab;
+
+        add_to_bucket(remaining_slab);
+    }
+
+    void add_to_bucket(memory_slab<_slab_size>* slab) {
+        const auto bucket_index = block_size_to_bucket_index(slab->header.metadata.element_size);
+        auto*& bucket = _free_segments[bucket_index];
+
+        if (bucket != nullptr) {
+            bucket->header.free_list.previous = slab;
+        }
+
+        slab->header.free_list.next = bucket;
+        slab->header.free_list.previous = nullptr;
+        bucket = slab;
+        _free_segments_mask |= (1 << bucket_index);
+    }
+
+    void remove_from_free_list(memory_slab<_slab_size>* slab, std::size_t bucket_index) {
+        if (bucket_index >= _max_buckets) {
+            throw std::runtime_error("bucket index out of range");
+        }
+
+        auto* prev = slab->header.free_list.previous;
+        auto* next = slab->header.free_list.next;
+
+        if (prev != nullptr) {
+            prev->header.free_list.next = next;
+        }
+
+        if (_free_segments[bucket_index] == slab) {
+            _free_segments[bucket_index] = next;
+
+            if (next == nullptr) {
+                _free_segments_mask &= ~(1ull << bucket_index);
+            }
+        }
+
+        if (next != nullptr) {
+            next->header.free_list.previous = prev;
+        }
+
+        slab->header.free_list.previous = nullptr;
+        slab->header.free_list.next = nullptr;
+    }
+
+    void merge_neighbors_into_slab(memory_slab<_slab_size>* slab) {
+        bool merged = false;
+
+        auto* prev = slab->header.neighbors.previous;
+        while (prev != nullptr && prev->is_empty() && prev->header.metadata.free_memory_manager == this) {
+
+            const auto prev_size = prev->header.metadata.element_size;
+            const auto prev_bucket = std::bit_width(prev_size);
+
+            if (prev->header.free_list.previous != nullptr || prev->header.free_list.next != nullptr) {
+                remove_from_free_list(prev, prev_bucket);
+            }
+
+            auto* prev_prev = prev->header.neighbors.previous;
+
+            prev->header.metadata.element_size += slab->header.metadata.element_size +
+                memory_slab<_slab_size>::data_block_offset;
+
+            prev->header.neighbors.next = slab->header.neighbors.next;
+            if (slab->header.neighbors.next != nullptr) {
+                slab->header.neighbors.next->header.neighbors.previous = prev;
+            }
+
+            slab = prev;
+            prev = prev_prev;
+            merged = true;
+        }
+
+        auto* next = slab->header.neighbors.next;
+        while (next != nullptr && next->is_empty() && next->header.metadata.free_memory_manager == this) {
+
+            const auto next_size = next->header.metadata.element_size;
+            const auto next_bucket = std::bit_width(next_size);
+
+            if (next->header.free_list.previous != nullptr || next->header.free_list.next != nullptr) {
+                remove_from_free_list(next, next_bucket);
+            }
+
+            auto* next_next = next->header.neighbors.next;
+
+            slab->header.metadata.element_size += next->header.metadata.element_size +
+                memory_slab<_slab_size>::data_block_offset;
+
+            slab->header.neighbors.next = next_next;
+            if (next_next != nullptr) {
+                next_next->header.neighbors.previous = slab;
+            }
+
+            next = next_next;
+            merged = true;
+        }
+
+        if (merged) {
+            slab->header.metadata.mask = 0;
+        }
+    }
+
+    void* split_and_allocate(memory_slab<_slab_size>* slab, std::size_t size) {
+        const auto original_size = slab->header.metadata.element_size;
+
+        const std::size_t required_size = size;
+
+        const std::size_t allocation_slabs = (size + memory_slab<_slab_size>::data_block_offset + _slab_size - 1) / _slab_size;
+        const std::size_t allocation_size = allocation_slabs * _slab_size;
+
+        const std::size_t remaining_size = original_size - allocation_size;
+
+        if (remaining_size < _slab_size) {
+
+            slab->header.metadata.element_size = original_size;
+            slab->set_element(0);
+            return slab->get_element(0);
+        }
+
+        slab->header.metadata.element_size = required_size;
+
+        split_slab_at_offset(slab, allocation_size);
+
+        slab->set_element(0);
+
+        return slab->get_element(0);
+    }
+
+    constexpr std::size_t required_size_to_sufficient_bucket_index(const std::size_t size) const {
+        return std::bit_width(size - 1);
+    }
+
+    constexpr std::size_t block_size_to_bucket_index(const std::size_t size) const {
+        return std::bit_width(size) - 1;
+    }
+
+    std::array<memory_slab<_slab_size>*, _max_buckets> _free_segments{};
+    std::uint64_t _free_segments_mask{ 0 };
+
+    static_assert(_max_buckets <= sizeof(_free_segments_mask) * 8, "Too many buckets for free segments manager");
+
+    friend class FreeMemoryManagerTest;
 };
 
 }
