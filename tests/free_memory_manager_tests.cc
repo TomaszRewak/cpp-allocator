@@ -63,16 +63,6 @@ TEST_F(FreeMemoryManagerTest, AddEmptySlab) {
     ASSERT_EQ(slabs[0].header.free_list.next, nullptr);
 }
 
-TEST_F(FreeMemoryManagerTest, CannotAddNonEmptySlab) {
-    memory_slab<256> slabs[10];
-    launder_slab(slabs, 10);
-    slabs[0].set_element(0);
-
-    free_memory_manager<256> manager;
-
-    ASSERT_THROW(manager.add_memory_segment(slabs), std::runtime_error);
-}
-
 TEST_F(FreeMemoryManagerTest, AllocateSmallElement) {
     memory_slab<256> slabs[10];
     launder_slab(slabs, 10);
@@ -204,6 +194,46 @@ TEST_F(FreeMemoryManagerTest, FillSlabWithSmallElementsAndThenAddMore) {
     ASSERT_EQ(slabs[1].header.neighbors.next, &slabs[2]);
     ASSERT_EQ(slabs[2].header.neighbors.previous, &slabs[1]);
     ASSERT_EQ(slabs[2].header.neighbors.next, nullptr);
+}
+
+TEST_F(FreeMemoryManagerTest, RemoveOneOfTheSmallElements) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+
+    void* ptr1 = manager.get_memory_block(8);
+    void* ptr2 = manager.get_memory_block(8);
+    void* ptr3 = manager.get_memory_block(8);
+    manager.release_memory_block(ptr2);
+
+    ASSERT_MASK_EQ(manager, 8, 256 * 9 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 8, &slabs[0]);
+    ASSERT_TRUE(slabs[0].has_element(0));
+    ASSERT_FALSE(slabs[0].has_element(1));
+    ASSERT_TRUE(slabs[0].has_element(2));
+}
+
+TEST_F(FreeMemoryManagerTest, RemoveLastSmallElement) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_memory_segment(slabs);
+
+    void* ptr = manager.get_memory_block(8);
+    manager.release_memory_block(ptr);
+
+    ASSERT_MASK_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 8, nullptr);
+    ASSERT_TRUE(slabs[0].is_empty());
+    ASSERT_EQ(slabs[0].header.metadata.element_size, 256 * 10 - memory_slab<256>::data_block_offset);
+    ASSERT_EQ(slabs[0].header.metadata.free_memory_manager, &manager);
+    ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.neighbors.next, nullptr);
+    ASSERT_EQ(slabs[0].header.free_list.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.free_list.next, nullptr);
 }
 
 }
