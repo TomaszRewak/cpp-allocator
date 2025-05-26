@@ -20,6 +20,8 @@ public:
     void add_new_memory_segment(memory_slab<_slab_size>* const slab) {
         assert(slab != nullptr && "slab must not be null");
         assert(slab->header.metadata.free_memory_manager == nullptr && "slab already belongs to a memory manager");
+        assert(slab->header.neighbors.previous == nullptr && "slab must not have a previous neighbor");
+        assert(slab->header.neighbors.next == nullptr && "slab must not have a next neighbor");
 
         slab->header.metadata.free_memory_manager = this;
 
@@ -29,6 +31,8 @@ public:
     void add_memory_segment(memory_slab<_slab_size>* const slab) {
         assert(slab->is_empty() && "slab must be empty when added to the manager");
         assert(slab->header.metadata.free_memory_manager == this && "slab must belong to this memory manager");
+        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
+        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
 
         const auto merged_slab = merge_neighbors_into_slab(slab);
 
@@ -42,6 +46,7 @@ public:
             return allocate_from_bucket(min_bucket_index, size);
         }
 
+        // TODO: don't compare with element size, but with slab size
         if (size <= memory_slab<_slab_size>::data_block_size / 2) {
             const auto min_full_slab_size = std::bit_width(memory_slab<_slab_size>::data_block_size);
 
@@ -104,9 +109,8 @@ public:
     void* allocate_from_slab(memory_slab<_slab_size>* slab, std::size_t bucket_index) {
         const auto element_index = slab->get_first_free_element();
 
-        if (element_index >= slab->max_elements()) {
-            return nullptr;
-        }
+        assert(!slab->has_element(element_index) && "element must not already exist in slab");
+        assert(element_index < slab->max_elements() && "element index must be within slab bounds");
 
         slab->set_element(element_index);
 
@@ -118,10 +122,13 @@ public:
     }
 
     void* create_partitioned_slab(memory_slab<_slab_size>* slab, std::size_t request_size) {
+        assert(slab != nullptr && "slab must not be null");
+        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
+        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
+
         const auto original_slab_size = slab->header.metadata.element_size;
 
         if (original_slab_size > memory_slab<_slab_size>::data_block_size) {
-
             split_slab_at_offset(slab, _slab_size);
         }
 
@@ -178,7 +185,6 @@ private:
             "cannot split slab at its full size");
 
         const auto original_element_size = slab->header.metadata.element_size;
-        const auto remaining_element_size = original_element_size - split_offset;
 
         auto* slab_ptr = reinterpret_cast<std::byte*>(slab);
         auto* remaining_slab_ptr = slab_ptr + split_offset;
@@ -186,7 +192,7 @@ private:
 
         slab->header.metadata.element_size = split_offset - memory_slab<_slab_size>::data_block_offset;
 
-        remaining_slab->header.metadata.element_size = remaining_element_size;
+        remaining_slab->header.metadata.element_size = original_element_size - split_offset;
         remaining_slab->header.metadata.mask = 0;
         remaining_slab->header.metadata.free_memory_manager = slab->header.metadata.free_memory_manager;
 
@@ -205,6 +211,10 @@ private:
     }
 
     void add_to_bucket(memory_slab<_slab_size>* slab) {
+        assert(slab != nullptr && "slab must not be null");
+        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
+        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
+
         const auto bucket_index = block_size_to_bucket_index(slab->header.metadata.element_size);
         auto*& bucket = _free_segments[bucket_index];
 
@@ -213,7 +223,6 @@ private:
         }
 
         slab->header.free_list.next = bucket;
-        slab->header.free_list.previous = nullptr;
         bucket = slab;
         _free_segments_mask |= (1 << bucket_index);
     }
@@ -222,9 +231,10 @@ private:
         const auto bucket_index = block_size_to_bucket_index(slab->header.metadata.element_size);
 
         assert(bucket_index < _max_buckets && "bucket index out of range");
+        assert(has_bucket_at_index(bucket_index) && "bucket must exist for the given index");
 
-        auto* prev = slab->header.free_list.previous;
-        auto* next = slab->header.free_list.next;
+        auto* const prev = slab->header.free_list.previous;
+        auto* const next = slab->header.free_list.next;
 
         if (prev != nullptr) {
             prev->header.free_list.next = next;
@@ -247,11 +257,13 @@ private:
     }
 
     memory_slab<_slab_size>* merge_neighbors_into_slab(memory_slab<_slab_size>* slab) {
-        auto* prev = slab->header.neighbors.previous;
-        if (prev && prev->is_empty()) {
-            const auto prev_size = prev->header.metadata.element_size;
-            const auto prev_bucket = block_size_to_bucket_index(prev_size);
+        assert(slab != nullptr && "slab must not be null");
+        assert(slab->is_empty() && "slab must be empty when merging neighbors");
+        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
+        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
 
+        auto* const prev = slab->header.neighbors.previous;
+        if (prev != nullptr && prev->is_empty()) {
             remove_from_free_list(prev);
 
             prev->header.metadata.element_size += slab->header.metadata.element_size +
@@ -265,10 +277,8 @@ private:
             slab = prev;
         }
 
-        auto* next = slab->header.neighbors.next;
-        if (next && next->is_empty()) {
-            const auto next_size = next->header.metadata.element_size;
-
+        auto* const next = slab->header.neighbors.next;
+        if (next != nullptr && next->is_empty()) {
             remove_from_free_list(next);
 
             slab->header.metadata.element_size += next->header.metadata.element_size +
@@ -315,6 +325,10 @@ private:
 
     constexpr std::size_t block_size_to_bucket_index(const std::size_t size) const {
         return std::bit_width(size) - 1;
+    }
+
+    bool has_bucket_at_index(const std::size_t bucket_index) const {
+        return _free_segments_mask & (1ull << bucket_index);
     }
 
     std::array<memory_slab<_slab_size>*, _max_buckets> _free_segments{};
