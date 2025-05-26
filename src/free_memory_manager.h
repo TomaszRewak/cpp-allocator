@@ -248,9 +248,7 @@ private:
             const auto prev_size = prev->header.metadata.element_size;
             const auto prev_bucket = block_size_to_bucket_index(prev_size);
 
-            if (prev->header.free_list.previous != nullptr || prev->header.free_list.next != nullptr) {
-                remove_from_free_list(prev);
-            }
+            remove_from_free_list(prev);
 
             prev->header.metadata.element_size += slab->header.metadata.element_size +
                 memory_slab<_slab_size>::data_block_offset;
@@ -267,9 +265,7 @@ private:
         if (next && next->is_empty()) {
             const auto next_size = next->header.metadata.element_size;
 
-            if (next->header.free_list.previous != nullptr || next->header.free_list.next != nullptr) {
-                remove_from_free_list(next);
-            }
+            remove_from_free_list(next);
 
             slab->header.metadata.element_size += next->header.metadata.element_size +
                 memory_slab<_slab_size>::data_block_offset;
