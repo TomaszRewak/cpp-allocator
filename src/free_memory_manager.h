@@ -17,18 +17,22 @@ private:
     static constexpr std::size_t _max_buckets = std::numeric_limits<std::size_t>::digits;
 
 public:
-    void add_memory_segment(memory_slab<_slab_size>* slab) {
-        assert(slab->is_empty() && "slab must be empty when added to the manager");
+    void add_new_memory_segment(memory_slab<_slab_size>* const slab) {
+        assert(slab != nullptr && "slab must not be null");
+        assert(slab->header.metadata.free_memory_manager == nullptr && "slab already belongs to a memory manager");
 
         slab->header.metadata.free_memory_manager = this;
-        slab = merge_neighbors_into_slab(slab);
 
-        const auto element_size = slab->header.metadata.element_size;
-        const auto bucket_index = block_size_to_bucket_index(element_size);
+        add_memory_segment(slab);
+    }
 
-        assert(bucket_index < _max_buckets && "element size is too large");
+    void add_memory_segment(memory_slab<_slab_size>* const slab) {
+        assert(slab->is_empty() && "slab must be empty when added to the manager");
+        assert(slab->header.metadata.free_memory_manager == this && "slab must belong to this memory manager");
 
-        add_to_bucket(slab);
+        const auto merged_slab = merge_neighbors_into_slab(slab);
+
+        add_to_bucket(merged_slab);
     }
 
     void* get_memory_block(std::size_t size) {

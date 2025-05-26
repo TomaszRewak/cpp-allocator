@@ -51,7 +51,7 @@ TEST_F(FreeMemoryManagerTest, AddEmptySlab) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
 
     ASSERT_MASK_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset);
     ASSERT_BUCKET_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset, slabs);
@@ -68,7 +68,7 @@ TEST_F(FreeMemoryManagerTest, AllocateSmallElement) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
     void* ptr = manager.get_memory_block(8);
 
     ASSERT_NE(ptr, nullptr);
@@ -99,7 +99,7 @@ TEST_F(FreeMemoryManagerTest, AllocateMultipleSmallElementsInSameSlab) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
 
     void* ptr1 = manager.get_memory_block(5);
     void* ptr2 = manager.get_memory_block(6);
@@ -126,7 +126,7 @@ TEST_F(FreeMemoryManagerTest, AllocateSmallElementsInDifferentSlabs) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
 
     void* ptr1 = manager.get_memory_block(4);
     void* ptr2 = manager.get_memory_block(5);
@@ -148,7 +148,7 @@ TEST_F(FreeMemoryManagerTest, FillSlabWithSmallElements) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
 
     do {
         void* ptr = manager.get_memory_block(8);
@@ -167,7 +167,7 @@ TEST_F(FreeMemoryManagerTest, FillSlabWithSmallElementsAndThenAddMore) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
 
     do {
         void* ptr = manager.get_memory_block(8);
@@ -201,7 +201,7 @@ TEST_F(FreeMemoryManagerTest, RemoveOneOfTheSmallElements) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
 
     void* ptr1 = manager.get_memory_block(8);
     void* ptr2 = manager.get_memory_block(8);
@@ -220,7 +220,7 @@ TEST_F(FreeMemoryManagerTest, RemoveLastSmallElement) {
     launder_slab(slabs, 10);
 
     free_memory_manager<256> manager;
-    manager.add_memory_segment(slabs);
+    manager.add_new_memory_segment(slabs);
 
     void* ptr = manager.get_memory_block(8);
     manager.release_memory_block(ptr);
