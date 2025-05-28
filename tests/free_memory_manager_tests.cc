@@ -242,6 +242,33 @@ TEST_F(FreeMemoryManagerTest, RemoveLastSmallElement) {
     ASSERT_EQ(slabs[0].header.free_list.next, nullptr);
 }
 
+TEST_F(FreeMemoryManagerTest, AllSlabsHoldTheSameNumberOfElements) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_new_memory_segment(slabs);
+
+    std::array<std::size_t, 10> sizes;
+    std::fill(sizes.begin(), sizes.end(), 0);
+
+    for (std::size_t i = 0; i < 8; ++i) {
+        do {
+            void* ptr = manager.get_memory_block(8);
+            ASSERT_NE(ptr, nullptr);
+            ASSERT_IS_IN_SLAB(ptr, &slabs[i]);
+            ++sizes[i];
+        } while (!slabs[i].is_full());
+    }
+
+    for (std::size_t i = 0; i < 8; ++i) {
+        ASSERT_EQ(slabs[i].header.metadata.element_size, 8);
+        ASSERT_EQ(sizes[i], slabs[i].max_elements());
+        ASSERT_EQ(sizes[i], sizes[0]);
+        ASSERT_TRUE(slabs[i].is_full());
+    }
+}
+
 TEST_F(FreeMemoryManagerTest, AllocateFewSlabsWithSmallElementsAndThenReleaseFewOfThem) {
     memory_slab<256> slabs[10];
     launder_slab(slabs, 10);
@@ -255,7 +282,6 @@ TEST_F(FreeMemoryManagerTest, AllocateFewSlabsWithSmallElementsAndThenReleaseFew
     } while (!slabs[0].is_full());
 
     std::vector<void*> slab_2_ptrs;
-    void* const ptr2 = manager.get_memory_block(8);
     do {
         slab_2_ptrs.push_back(manager.get_memory_block(8));
     } while (!slabs[1].is_full());
@@ -306,10 +332,6 @@ TEST_F(FreeMemoryManagerTest, AllocateFewSlabsWithSmallElementsAndThenReleaseFew
     ASSERT_EQ(slabs[0].header.free_list.previous, &slabs[2]);
     ASSERT_EQ(slabs[0].header.free_list.next, nullptr);
 
-
-    ASSERT_EQ(slab_1_ptrs.size(), slab_2_ptrs.size());
-    ASSERT_EQ(slabs[1].header.metadata.mask, 0);
-
     for (auto ptr : slab_2_ptrs) {
         ASSERT_IS_IN_SLAB(ptr, &slabs[1]);
         manager.release_memory_block(ptr);
@@ -317,19 +339,19 @@ TEST_F(FreeMemoryManagerTest, AllocateFewSlabsWithSmallElementsAndThenReleaseFew
 
     ASSERT_TRUE(slabs[1].is_empty());
 
-    // ASSERT_EQ(slabs[0].header.metadata.element_size, 256 * 3 - memory_slab<256>::data_block_offset);
-    // ASSERT_EQ(slabs[3].header.metadata.element_size, 8);
-    // ASSERT_EQ(slabs[4].header.metadata.element_size, 256 * 6 - memory_slab<256>::data_block_offset);
-    // ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
-    // ASSERT_EQ(slabs[0].header.neighbors.next, &slabs[3]);
-    // ASSERT_EQ(slabs[3].header.neighbors.previous, &slabs[0]);
-    // ASSERT_EQ(slabs[3].header.neighbors.next, &slabs[4]);
-    // ASSERT_EQ(slabs[4].header.neighbors.previous, &slabs[3]);
-    // ASSERT_EQ(slabs[4].header.neighbors.next, nullptr);
+    ASSERT_EQ(slabs[0].header.metadata.element_size, 256 * 3 - memory_slab<256>::data_block_offset);
+    ASSERT_EQ(slabs[3].header.metadata.element_size, 8);
+    ASSERT_EQ(slabs[4].header.metadata.element_size, 256 * 6 - memory_slab<256>::data_block_offset);
+    ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
+    ASSERT_EQ(slabs[0].header.neighbors.next, &slabs[3]);
+    ASSERT_EQ(slabs[3].header.neighbors.previous, &slabs[0]);
+    ASSERT_EQ(slabs[3].header.neighbors.next, &slabs[4]);
+    ASSERT_EQ(slabs[4].header.neighbors.previous, &slabs[3]);
+    ASSERT_EQ(slabs[4].header.neighbors.next, nullptr);
     ASSERT_MASK_EQ(manager, 8, 256 * 3 - memory_slab<256>::data_block_offset, 256 * 6 - memory_slab<256>::data_block_offset);
-    // ASSERT_BUCKET_EQ(manager, 8, &slabs[3]);
-    // ASSERT_BUCKET_EQ(manager, 256 * 3 - memory_slab<256>::data_block_offset, &slabs[0]);
-    // ASSERT_BUCKET_EQ(manager, 256 * 6 - memory_slab<256>::data_block_offset, &slabs[4]);
+    ASSERT_BUCKET_EQ(manager, 8, &slabs[3]);
+    ASSERT_BUCKET_EQ(manager, 256 * 3 - memory_slab<256>::data_block_offset, &slabs[0]);
+    ASSERT_BUCKET_EQ(manager, 256 * 6 - memory_slab<256>::data_block_offset, &slabs[4]);
 }
 
 }
