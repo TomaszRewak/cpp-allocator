@@ -56,8 +56,7 @@ public:
         }
 
         const auto bucket_index = std::countr_zero(_free_segments_mask >> min_bucket_index) + min_bucket_index;
-        const auto min_data_block_size = memory_slab<_slab_size>::data_block_size;
-        const auto data_block_size = std::max(element_size, min_data_block_size);
+        const auto data_block_size = std::max(element_size, 0 + memory_slab<_slab_size>::data_block_size);
         assert(bucket_index < _max_buckets && "bucket index out of range");
         assert(has_bucket_at_index(bucket_index) && "bucket must exist for the given index");
 
@@ -115,7 +114,7 @@ public:
             }
             slab->header.metadata.element_size = std::max(
                 slab->header.metadata.element_size,
-                memory_slab<_slab_size>::data_block_size
+                0 + memory_slab<_slab_size>::data_block_size
             );
             add_memory_segment(slab);
         }

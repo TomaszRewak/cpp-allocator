@@ -372,20 +372,53 @@ TEST_F(FreeMemoryManagerTest, AllocatesSmallElementFromSameGroupInSingleSlab) {
     ASSERT_IS_IN_SLAB(ptr4, &slabs[1]);
 }
 
-// TEST_F(FreeMemoryManagerTest, UsesOneSlabIfPossible) {
-//     memory_slab<256> slabs[10];
-//     launder_slab(slabs, 10);
+TEST_F(FreeMemoryManagerTest, UsesOneSlabIfPossible) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
 
-//     free_memory_manager<256> manager;
-//     manager.add_new_memory_segment(slabs);
+    free_memory_manager<256> manager;
+    manager.add_new_memory_segment(slabs);
 
-//     void* ptr = manager.get_memory_block(memory_slab<256>::data_block_size);
+    void* ptr = manager.get_memory_block(256 - memory_slab<256>::data_block_offset);
 
-//     ASSERT_NE(ptr, nullptr);
-//     ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
-//     ASSERT_MASK_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset);
-//     ASSERT_BUCKET_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset, &slabs[1]);
-//     ASSERT_EQ(slabs[0].header.metadata.element_size, 0 + memory_slab<256>::data_block_size);
-// }
+    ASSERT_NE(ptr, nullptr);
+    ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
+    ASSERT_MASK_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset, &slabs[1]);
+    ASSERT_EQ(slabs[0].header.metadata.element_size, 256 - memory_slab<256>::data_block_offset);
+}
+
+TEST_F(FreeMemoryManagerTest, UsesTwoSlabsIfNeeded) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_new_memory_segment(slabs);
+
+    void* ptr = manager.get_memory_block(256);
+
+    ASSERT_NE(ptr, nullptr);
+    ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
+    ASSERT_MASK_EQ(manager, 256 * 8 - memory_slab<256>::data_block_offset);
+    ASSERT_BUCKET_EQ(manager, 256 * 8 - memory_slab<256>::data_block_offset, &slabs[2]);
+    ASSERT_EQ(slabs[0].header.metadata.element_size, 256 * 2 - memory_slab<256>::data_block_offset);
+}
+
+TEST_F(FreeMemoryManagerTest, ReturnsNullWhenFull) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_new_memory_segment(slabs);
+
+    for (std::size_t i = 0; i < 10; ++i) {
+        void* ptr = manager.get_memory_block(128);
+        ASSERT_NE(ptr, nullptr);
+        ASSERT_IS_IN_SLAB(ptr, &slabs[i]);
+    }
+
+    void* ptr2 = manager.get_memory_block(1);
+    ASSERT_EQ(ptr2, nullptr);
+}
 
 }
