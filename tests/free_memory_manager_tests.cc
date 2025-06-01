@@ -354,4 +354,38 @@ TEST_F(FreeMemoryManagerTest, AllocateFewSlabsWithSmallElementsAndThenReleaseFew
     ASSERT_BUCKET_EQ(manager, 256 * 6 - memory_slab<256>::data_block_offset, &slabs[4]);
 }
 
+TEST_F(FreeMemoryManagerTest, AllocatesSmallElementFromSameGroupInSingleSlab) {
+    memory_slab<256> slabs[10];
+    launder_slab(slabs, 10);
+
+    free_memory_manager<256> manager;
+    manager.add_new_memory_segment(slabs);
+
+    void* ptr1 = manager.get_memory_block(5);
+    void* ptr2 = manager.get_memory_block(9);
+    void* ptr3 = manager.get_memory_block(7);
+    void* ptr4 = manager.get_memory_block(11);
+
+    ASSERT_IS_IN_SLAB(ptr1, &slabs[0]);
+    ASSERT_IS_IN_SLAB(ptr2, &slabs[1]);
+    ASSERT_IS_IN_SLAB(ptr3, &slabs[0]);
+    ASSERT_IS_IN_SLAB(ptr4, &slabs[1]);
+}
+
+// TEST_F(FreeMemoryManagerTest, UsesOneSlabIfPossible) {
+//     memory_slab<256> slabs[10];
+//     launder_slab(slabs, 10);
+
+//     free_memory_manager<256> manager;
+//     manager.add_new_memory_segment(slabs);
+
+//     void* ptr = manager.get_memory_block(memory_slab<256>::data_block_size);
+
+//     ASSERT_NE(ptr, nullptr);
+//     ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
+//     ASSERT_MASK_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset);
+//     ASSERT_BUCKET_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset, &slabs[1]);
+//     ASSERT_EQ(slabs[0].header.metadata.element_size, 0 + memory_slab<256>::data_block_size);
+// }
+
 }

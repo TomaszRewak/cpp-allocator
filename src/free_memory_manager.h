@@ -40,73 +40,46 @@ public:
     }
 
     void* get_memory_block(std::size_t size) {
-        const auto min_bucket_index = required_size_to_sufficient_bucket_index(size);
+        const auto matching_bucket_index = required_size_to_sufficient_bucket_index(size);
 
-        if ((_free_segments_mask & (1 << min_bucket_index)) != 0) {
-            return allocate_from_bucket(min_bucket_index, size);
+        if (has_bucket_at_index(matching_bucket_index)) {
+            return allocate_from_bucket(matching_bucket_index);
         }
 
-        // TODO: don't compare with element size, but with slab size
-        if (size <= memory_slab<_slab_size>::data_block_size / 2) {
-            const auto min_full_slab_size = std::bit_width(memory_slab<_slab_size>::data_block_size);
+        const auto element_size = required_size_to_element_size(size);
+        const auto min_full_slab_index = block_size_to_bucket_index(memory_slab<_slab_size>::data_block_size);
+        const auto min_bucket_index = std::max(matching_bucket_index, min_full_slab_index);
+        assert(min_bucket_index < _max_buckets && "minimum bucket index out of range");
 
-            if ((_free_segments_mask >> min_full_slab_size) == 0) {
-                return nullptr;
-            }
-
-            const auto bucket_index = std::countr_zero(_free_segments_mask >> min_full_slab_size) + min_full_slab_size;
-            assert(bucket_index < _max_buckets && "bucket index out of range");
-
-            auto* slab = _free_segments[bucket_index];
-            assert(slab != nullptr && "slab should not be null when bucket is occupied");
-
-            remove_from_free_list(slab);
-            return create_partitioned_slab(slab, size);
+        if ((_free_segments_mask >> min_bucket_index) == 0) {
+            return nullptr;
         }
-        else {
-            if ((_free_segments_mask >> min_bucket_index) == 0) {
-                return nullptr;
-            }
 
-            const auto bucket_index = std::countr_zero(_free_segments_mask >> min_bucket_index) + min_bucket_index;
-
-            if (bucket_index >= _max_buckets) {
-                return nullptr;
-            }
-
-            auto* slab = _free_segments[bucket_index];
-            if (slab == nullptr) {
-                return nullptr;
-            }
-
-            remove_from_free_list(slab);
-
-            auto remaining_size = slab->header.metadata.element_size - size;
-            if (remaining_size >= (_slab_size + memory_slab<_slab_size>::data_block_offset)) {
-                return split_and_allocate(slab, size);
-            }
-
-            slab->set_element(0);
-            return slab->get_element(0);
-        }
-    }
-
-    void* allocate_from_bucket(std::size_t bucket_index, std::size_t size) {
+        const auto bucket_index = std::countr_zero(_free_segments_mask >> min_bucket_index) + min_bucket_index;
+        const auto min_data_block_size = memory_slab<_slab_size>::data_block_size;
+        const auto data_block_size = std::max(element_size, min_data_block_size);
         assert(bucket_index < _max_buckets && "bucket index out of range");
+        assert(has_bucket_at_index(bucket_index) && "bucket must exist for the given index");
 
         auto* slab = _free_segments[bucket_index];
         assert(slab != nullptr && "slab should not be null when bucket is occupied");
-
-        if (slab->max_elements() > 1) {
-            return allocate_from_slab(slab, bucket_index);
-        }
+        assert(slab->is_empty() && "slab must be empty when allocating from it");
 
         remove_from_free_list(slab);
+        split_slab_at_offset(slab, data_block_size + memory_slab<_slab_size>::data_block_offset);
+
+        slab->header.metadata.element_size = element_size;
         slab->set_element(0);
+
+        if (!slab->is_full()) {
+            add_to_bucket(slab);
+        }
+
         return slab->get_element(0);
     }
 
-    void* allocate_from_slab(memory_slab<_slab_size>* slab, std::size_t bucket_index) {
+    void* allocate_from_bucket(std::size_t bucket_index) {
+        auto* const slab = _free_segments[bucket_index];
         const auto element_index = slab->get_first_free_element();
 
         assert(!slab->has_element(element_index) && "element must not already exist in slab");
@@ -114,38 +87,10 @@ public:
 
         slab->set_element(element_index);
 
-        if (slab->is_full()) {
+        if (slab->is_full())
             remove_from_free_list(slab);
-        }
 
         return slab->get_element(element_index);
-    }
-
-    void* create_partitioned_slab(memory_slab<_slab_size>* slab, std::size_t request_size) {
-        assert(slab != nullptr && "slab must not be null");
-        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
-        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
-
-        const auto original_slab_size = slab->header.metadata.element_size;
-
-        if (original_slab_size > memory_slab<_slab_size>::data_block_size) {
-            split_slab_at_offset(slab, _slab_size);
-        }
-
-        const auto bucket_index = required_size_to_sufficient_bucket_index(request_size);
-        const std::size_t bucket_element_size = (1ULL << bucket_index);
-
-        slab->header.metadata.element_size = bucket_element_size;
-        slab->header.metadata.mask = 0;
-
-        slab->set_element(0);
-        assert(!slab->is_full() && "slab should not be full after setting first element");
-
-        if (!slab->is_full()) {
-            add_to_bucket(slab);
-        }
-
-        return slab->get_element(0);
     }
 
     void release_memory_block(void* const data) {
@@ -168,9 +113,10 @@ public:
             if (!was_full) {
                 remove_from_free_list(slab);
             }
-            if (slab->header.metadata.element_size <= memory_slab<_slab_size>::data_block_size) {
-                slab->header.metadata.element_size = memory_slab<_slab_size>::data_block_size;
-            }
+            slab->header.metadata.element_size = std::max(
+                slab->header.metadata.element_size,
+                memory_slab<_slab_size>::data_block_size
+            );
             add_memory_segment(slab);
         }
         else if (was_full) {
@@ -180,9 +126,15 @@ public:
 
 private:
     void split_slab_at_offset(memory_slab<_slab_size>* slab, std::size_t split_offset) {
+        assert(slab != nullptr && "slab must not be null");
+        assert(slab->is_empty() && "slab must be empty when splitting");
         assert(split_offset % _slab_size == 0 && "split offset must be aligned to slab size");
-        assert(slab->header.metadata.element_size + memory_slab<_slab_size>::data_block_offset > split_offset &&
-            "cannot split slab at its full size");
+        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
+        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
+
+        if (slab->header.metadata.element_size + memory_slab<_slab_size>::data_block_offset == split_offset) {
+            return;
+        }
 
         const auto original_element_size = slab->header.metadata.element_size;
 
@@ -293,34 +245,16 @@ private:
         return slab;
     }
 
-    void* split_and_allocate(memory_slab<_slab_size>* slab, std::size_t size) {
-        const auto original_size = slab->header.metadata.element_size;
-
-        const std::size_t required_size = size;
-
-        const std::size_t allocation_slabs = (size + memory_slab<_slab_size>::data_block_offset + _slab_size - 1) / _slab_size;
-        const std::size_t allocation_size = allocation_slabs * _slab_size;
-
-        const std::size_t remaining_size = original_size - allocation_size;
-
-        if (remaining_size < _slab_size) {
-
-            slab->header.metadata.element_size = original_size;
-            slab->set_element(0);
-            return slab->get_element(0);
-        }
-
-        slab->header.metadata.element_size = required_size;
-
-        split_slab_at_offset(slab, allocation_size);
-
-        slab->set_element(0);
-
-        return slab->get_element(0);
-    }
-
     constexpr std::size_t required_size_to_sufficient_bucket_index(const std::size_t size) const {
         return std::bit_width(size - 1);
+    }
+
+    constexpr std::size_t required_size_to_element_size(const std::size_t size) const {
+        const auto element_size = (1ull << required_size_to_sufficient_bucket_index(size));
+        return element_size < memory_slab<_slab_size>::data_block_size
+            ? element_size
+            : (size + memory_slab<_slab_size>::data_block_offset + _slab_size - 1) / _slab_size * _slab_size -
+            memory_slab<_slab_size>::data_block_offset;
     }
 
     constexpr std::size_t block_size_to_bucket_index(const std::size_t size) const {
