@@ -28,7 +28,7 @@ public:
         add_memory_segment(slab);
     }
 
-    void* get_memory_block(std::size_t size) {
+    void* allocate(std::size_t size, const void* = nullptr) {
         const auto matching_bucket_index = required_size_to_sufficient_bucket_index(size);
 
         if (has_bucket_at_index(matching_bucket_index)) {
@@ -66,7 +66,7 @@ public:
         return slab->get_element(0);
     }
 
-    void release_memory_block(void* const data) {
+    void deallocate(void* const data, std::size_t = 0) {
         auto* const slab_aligned_ptr = reinterpret_cast<void*>(
             reinterpret_cast<std::uintptr_t>(data) & ~(memory_slab<_slab_size>::memory_slab_alignment - 1));
         auto* const slab = std::launder(reinterpret_cast<memory_slab<_slab_size>*>(slab_aligned_ptr));

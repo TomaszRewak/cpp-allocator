@@ -69,7 +69,7 @@ TEST_F(FreeMemoryManagerTest, AllocateSmallElement) {
 
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
-    void* ptr = manager.get_memory_block(8);
+    void* ptr = manager.allocate(8);
 
     ASSERT_NE(ptr, nullptr);
     ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
@@ -101,9 +101,9 @@ TEST_F(FreeMemoryManagerTest, AllocateMultipleSmallElementsInSameSlab) {
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
 
-    void* ptr1 = manager.get_memory_block(5);
-    void* ptr2 = manager.get_memory_block(6);
-    void* ptr3 = manager.get_memory_block(7);
+    void* ptr1 = manager.allocate(5);
+    void* ptr2 = manager.allocate(6);
+    void* ptr3 = manager.allocate(7);
 
     ASSERT_NE(ptr1, nullptr);
     ASSERT_NE(ptr2, nullptr);
@@ -128,8 +128,8 @@ TEST_F(FreeMemoryManagerTest, AllocateSmallElementsInDifferentSlabs) {
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
 
-    void* ptr1 = manager.get_memory_block(4);
-    void* ptr2 = manager.get_memory_block(5);
+    void* ptr1 = manager.allocate(4);
+    void* ptr2 = manager.allocate(5);
 
     ASSERT_NE(ptr1, nullptr);
     ASSERT_NE(ptr2, nullptr);
@@ -151,7 +151,7 @@ TEST_F(FreeMemoryManagerTest, FillSlabWithSmallElements) {
     manager.add_new_memory_segment(slabs);
 
     do {
-        void* ptr = manager.get_memory_block(8);
+        void* ptr = manager.allocate(8);
         ASSERT_NE(ptr, nullptr);
         ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
     } while (!slabs[0].is_full());
@@ -170,12 +170,12 @@ TEST_F(FreeMemoryManagerTest, FillSlabWithSmallElementsAndThenAddMore) {
     manager.add_new_memory_segment(slabs);
 
     do {
-        void* ptr = manager.get_memory_block(8);
+        void* ptr = manager.allocate(8);
         ASSERT_NE(ptr, nullptr);
         ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
     } while (!slabs[0].is_full());
 
-    void* ptr2 = manager.get_memory_block(8);
+    void* ptr2 = manager.allocate(8);
 
     ASSERT_NE(ptr2, nullptr);
     ASSERT_IS_IN_SLAB(ptr2, &slabs[1]);
@@ -209,10 +209,10 @@ TEST_F(FreeMemoryManagerTest, RemoveOneOfTheSmallElements) {
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
 
-    void* ptr1 = manager.get_memory_block(8);
-    void* ptr2 = manager.get_memory_block(8);
-    void* ptr3 = manager.get_memory_block(8);
-    manager.release_memory_block(ptr2);
+    void* ptr1 = manager.allocate(8);
+    void* ptr2 = manager.allocate(8);
+    void* ptr3 = manager.allocate(8);
+    manager.deallocate(ptr2);
 
     ASSERT_MASK_EQ(manager, 8, 256 * 9 - memory_slab<256>::data_block_offset);
     ASSERT_BUCKET_EQ(manager, 8, &slabs[0]);
@@ -228,8 +228,8 @@ TEST_F(FreeMemoryManagerTest, RemoveLastSmallElement) {
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
 
-    void* ptr = manager.get_memory_block(8);
-    manager.release_memory_block(ptr);
+    void* ptr = manager.allocate(8);
+    manager.deallocate(ptr);
 
     ASSERT_MASK_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset);
     ASSERT_BUCKET_EQ(manager, 8, nullptr);
@@ -254,7 +254,7 @@ TEST_F(FreeMemoryManagerTest, AllSlabsHoldTheSameNumberOfElements) {
 
     for (std::size_t i = 0; i < 8; ++i) {
         do {
-            void* ptr = manager.get_memory_block(8);
+            void* ptr = manager.allocate(8);
             ASSERT_NE(ptr, nullptr);
             ASSERT_IS_IN_SLAB(ptr, &slabs[i]);
             ++sizes[i];
@@ -278,28 +278,28 @@ TEST_F(FreeMemoryManagerTest, AllocateFewSlabsWithSmallElementsAndThenReleaseFew
 
     std::vector<void*> slab_1_ptrs;
     do {
-        slab_1_ptrs.push_back(manager.get_memory_block(8));
+        slab_1_ptrs.push_back(manager.allocate(8));
     } while (!slabs[0].is_full());
 
     std::vector<void*> slab_2_ptrs;
     do {
-        slab_2_ptrs.push_back(manager.get_memory_block(8));
+        slab_2_ptrs.push_back(manager.allocate(8));
     } while (!slabs[1].is_full());
 
     std::vector<void*> slab_3_ptrs;
     do {
-        slab_3_ptrs.push_back(manager.get_memory_block(8));
+        slab_3_ptrs.push_back(manager.allocate(8));
     } while (!slabs[2].is_full());
 
-    void* const ptr4 = manager.get_memory_block(8);
+    void* const ptr4 = manager.allocate(8);
 
     for (auto ptr : slab_1_ptrs) {
         ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
-        manager.release_memory_block(ptr);
+        manager.deallocate(ptr);
     }
     for (auto ptr : slab_3_ptrs) {
         ASSERT_IS_IN_SLAB(ptr, &slabs[2]);
-        manager.release_memory_block(ptr);
+        manager.deallocate(ptr);
     }
 
     ASSERT_EQ(slabs[0].header.metadata.element_size, 256 - memory_slab<256>::data_block_offset);
@@ -334,7 +334,7 @@ TEST_F(FreeMemoryManagerTest, AllocateFewSlabsWithSmallElementsAndThenReleaseFew
 
     for (auto ptr : slab_2_ptrs) {
         ASSERT_IS_IN_SLAB(ptr, &slabs[1]);
-        manager.release_memory_block(ptr);
+        manager.deallocate(ptr);
     }
 
     ASSERT_TRUE(slabs[1].is_empty());
@@ -361,10 +361,10 @@ TEST_F(FreeMemoryManagerTest, AllocatesSmallElementFromSameGroupInSingleSlab) {
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
 
-    void* ptr1 = manager.get_memory_block(5);
-    void* ptr2 = manager.get_memory_block(9);
-    void* ptr3 = manager.get_memory_block(7);
-    void* ptr4 = manager.get_memory_block(11);
+    void* ptr1 = manager.allocate(5);
+    void* ptr2 = manager.allocate(9);
+    void* ptr3 = manager.allocate(7);
+    void* ptr4 = manager.allocate(11);
 
     ASSERT_IS_IN_SLAB(ptr1, &slabs[0]);
     ASSERT_IS_IN_SLAB(ptr2, &slabs[1]);
@@ -379,7 +379,7 @@ TEST_F(FreeMemoryManagerTest, UsesOneSlabIfPossible) {
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
 
-    void* ptr = manager.get_memory_block(256 - memory_slab<256>::data_block_offset);
+    void* ptr = manager.allocate(256 - memory_slab<256>::data_block_offset);
 
     ASSERT_NE(ptr, nullptr);
     ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
@@ -395,7 +395,7 @@ TEST_F(FreeMemoryManagerTest, UsesTwoSlabsIfNeeded) {
     free_memory_manager<256> manager;
     manager.add_new_memory_segment(slabs);
 
-    void* ptr = manager.get_memory_block(256);
+    void* ptr = manager.allocate(256);
 
     ASSERT_NE(ptr, nullptr);
     ASSERT_IS_IN_SLAB(ptr, &slabs[0]);
@@ -412,12 +412,12 @@ TEST_F(FreeMemoryManagerTest, ReturnsNullWhenFull) {
     manager.add_new_memory_segment(slabs);
 
     for (std::size_t i = 0; i < 10; ++i) {
-        void* ptr = manager.get_memory_block(128);
+        void* ptr = manager.allocate(128);
         ASSERT_NE(ptr, nullptr);
         ASSERT_IS_IN_SLAB(ptr, &slabs[i]);
     }
 
-    void* ptr2 = manager.get_memory_block(1);
+    void* ptr2 = manager.allocate(1);
     ASSERT_EQ(ptr2, nullptr);
 }
 
