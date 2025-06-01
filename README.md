@@ -43,14 +43,16 @@ The deallocation process heavily relies on proper slab alignment. The slab align
 
 The process of deallocating objects is as follows:
 1. `│ `Calculate the slab header address based on the pointer to the object.
-2. `│ `Calculate the slab index within the slab header.
+2. `│ `Calculate the object index within the slab based on the header metadata.
 3. `│ `Update the slab mask to mark the object as free.
 4. `├─`If the slab is not empty yet, return.
-5. `├┐`If the slab has fully empty neighboring slabs, merge them into a single slab, otherwise go to `8`.
-6. `││`Remove empty neighboring slabs from the free slab list.
-7. `││`Merge the neighboring slabs into a single slab, updated the slab header to reflect the new size.
-8. `├┘`Add the slab to the free slab list.
-9. `└─`Return.
+5. `│ `Update the slab element size in case it was previously storing multiple small objects.
+6. `├┐`If the slab has fully empty neighboring slabs, merge them into a single slab, otherwise go to `10`.
+7. `││`Remove empty neighboring slabs from respective free slab lists.
+8. `││`Merge the neighboring slabs into a single slab.
+9. `││`Update the slab header to reflect the new size.
+10. `├┘`Add the slab to the free slab list of the appropriate size.
+11. `└─`Return.
 
 
 
