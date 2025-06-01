@@ -12,7 +12,6 @@ protected:
     template <std::size_t _slab_size>
     void launder_slab(memory_slab<_slab_size>* slab, const std::size_t span) {
         auto* aligned_slab = std::launder(slab);
-        aligned_slab->header.metadata.free_memory_manager = nullptr;
         aligned_slab->header.metadata.mask = 0;
         aligned_slab->header.metadata.element_size = span * _slab_size - memory_slab<_slab_size>::data_block_offset;
         aligned_slab->header.neighbors.previous = nullptr;
@@ -56,7 +55,6 @@ TEST_F(FreeMemoryManagerTest, AddEmptySlab) {
     ASSERT_MASK_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset);
     ASSERT_BUCKET_EQ(manager, 256 * 10 - memory_slab<256>::data_block_offset, slabs);
     ASSERT_EQ(slabs[0].header.metadata.element_size, 256 * 10 - memory_slab<256>::data_block_offset);
-    ASSERT_EQ(slabs[0].header.metadata.free_memory_manager, &manager);
     ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
     ASSERT_EQ(slabs[0].header.neighbors.next, nullptr);
     ASSERT_EQ(slabs[0].header.free_list.previous, nullptr);
@@ -76,8 +74,6 @@ TEST_F(FreeMemoryManagerTest, AllocateSmallElement) {
     ASSERT_MASK_EQ(manager, 8, 256 * 9 - memory_slab<256>::data_block_offset);
     ASSERT_BUCKET_EQ(manager, 8, &slabs[0]);
     ASSERT_BUCKET_EQ(manager, 256 * 9 - memory_slab<256>::data_block_offset, &slabs[1]);
-    ASSERT_EQ(slabs[0].header.metadata.free_memory_manager, &manager);
-    ASSERT_EQ(slabs[1].header.metadata.free_memory_manager, &manager);
     ASSERT_TRUE(slabs[0].has_element(0));
     ASSERT_FALSE(slabs[0].is_full());
     ASSERT_TRUE(slabs[1].is_empty());
@@ -235,7 +231,6 @@ TEST_F(FreeMemoryManagerTest, RemoveLastSmallElement) {
     ASSERT_BUCKET_EQ(manager, 8, nullptr);
     ASSERT_TRUE(slabs[0].is_empty());
     ASSERT_EQ(slabs[0].header.metadata.element_size, 256 * 10 - memory_slab<256>::data_block_offset);
-    ASSERT_EQ(slabs[0].header.metadata.free_memory_manager, &manager);
     ASSERT_EQ(slabs[0].header.neighbors.previous, nullptr);
     ASSERT_EQ(slabs[0].header.neighbors.next, nullptr);
     ASSERT_EQ(slabs[0].header.free_list.previous, nullptr);

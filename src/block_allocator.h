@@ -9,8 +9,8 @@
 
 namespace allocator {
 
-template <std::size_t _size>
-class in_place_block_allocator final {
+template <std::size_t _size, std::size_t _alignment = alignof(std::max_align_t)>
+class alignas(_alignment) in_place_block_allocator final {
 public:
     allocation_result allocate_at_least(std::size_t size) {
         if (_allocated)
@@ -30,8 +30,8 @@ public:
     }
 
 private:
-    bool _allocated = false;
     std::array<std::byte, _size> _data;
+    bool _allocated = false;
 };
 
 }

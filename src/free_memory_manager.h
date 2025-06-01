@@ -19,11 +19,8 @@ private:
 public:
     void add_new_memory_segment(memory_slab<_slab_size>* const slab) {
         assert(slab != nullptr && "slab must not be null");
-        assert(slab->header.metadata.free_memory_manager == nullptr && "slab already belongs to a memory manager");
         assert(slab->header.neighbors.previous == nullptr && "slab must not have a previous neighbor");
         assert(slab->header.neighbors.next == nullptr && "slab must not have a next neighbor");
-
-        slab->header.metadata.free_memory_manager = this;
 
         add_memory_segment(slab);
     }
@@ -100,7 +97,6 @@ public:
 private:
     void add_memory_segment(memory_slab<_slab_size>* const slab) {
         assert(slab->is_empty() && "slab must be empty when added to the manager");
-        assert(slab->header.metadata.free_memory_manager == this && "slab must belong to this memory manager");
         assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
         assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
 
@@ -145,7 +141,6 @@ private:
 
         remaining_slab->header.metadata.element_size = original_element_size - split_offset;
         remaining_slab->header.metadata.mask = 0;
-        remaining_slab->header.metadata.free_memory_manager = slab->header.metadata.free_memory_manager;
 
         remaining_slab->header.neighbors.previous = slab;
         remaining_slab->header.neighbors.next = slab->header.neighbors.next;

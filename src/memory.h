@@ -16,60 +16,26 @@ concept allocator = requires(_allocator_t allocator, std::byte * data, std::size
     { allocator.deallocate(data) };
 };
 
-template <allocator _allocator_t, std::size_t _slab_size = 1024>
+template <allocator _allocator_t, std::size_t _slab_size = 1024, std::size_t _min_allocation_size = 1>
 class memory final {
 public:
-    std::byte* allocate(size_t size) {
-        if (!_free_segments) {
-            allocate_new_block(size);
-        }
+    void* allocate(size_t size) {
+        auto* const data = _free_memory_manager.allocate(size);
 
-        auto* const current_segment_header = _free_segments;
-        auto* const current_segment_data = reinterpret_cast<std::byte*>(current_segment_header + 1);
+        if (data)
+            return data;
 
-        assert(current_segment_header->previous_free_segment == nullptr);
-        assert(current_segment_header->data_size >= size);
+        allocate_new_block(size);
 
-        if (current_segment_header->data_size > size + sizeof(segment_header)) {
-            auto* const remaining_segment_header = std::launder(reinterpret_cast<segment_header*>(current_segment_data + size));
-
-            remaining_segment_header->previous_neighbor_segment = current_segment_header;
-            remaining_segment_header->next_neighbor_segment = current_segment_header->next_neighbor_segment;
-            remaining_segment_header->previous_free_segment = current_segment_header->previous_free_segment;
-            remaining_segment_header->next_free_segment = current_segment_header->next_free_segment;
-            remaining_segment_header->data_size = current_segment_header->data_size - size - sizeof(segment_header);
-
-            if (current_segment_header->next_neighbor_segment)
-                current_segment_header->next_neighbor_segment->previous_neighbor_segment = remaining_segment_header;
-            if (current_segment_header->next_free_segment)
-                current_segment_header->next_free_segment->previous_free_segment = remaining_segment_header;
-            if (current_segment_header->previous_free_segment)
-                current_segment_header->previous_free_segment->next_free_segment = remaining_segment_header;
-
-            current_segment_header->data_size = size;
-            current_segment_header->next_neighbor_segment = remaining_segment_header;
-            current_segment_header->next_free_segment = nullptr;
-            current_segment_header->previous_free_segment = nullptr;
-
-            _free_segments = remaining_segment_header;
-        }
-        else {
-            if (current_segment_header->next_free_segment)
-                current_segment_header->next_free_segment->previous_free_segment = current_segment_header->previous_free_segment;
-            if (current_segment_header->previous_free_segment)
-                current_segment_header->previous_free_segment->next_free_segment = current_segment_header->next_free_segment;
-
-            current_segment_header->previous_free_segment = nullptr;
-            current_segment_header->next_free_segment = nullptr;
-
-            _free_segments = current_segment_header->next_free_segment;
-        }
-
-        return current_segment_data;
+        return _free_memory_manager.allocate(size);
     }
 
     template <typename T, typename... Args>
     T* allocate(Args&&... args) {
+        const auto size = alignof(T) > sizeof(T) || alignof(T) > alignof(std::max_align_t)
+            ? sizeof(T) + alignof(T)
+            : sizeof(T);
+
         auto* const allocated = allocate(sizeof(T));
         return new (allocated) T(std::forward<Args>(args)...);
     }
@@ -79,53 +45,54 @@ public:
         if (!data)
             return;
 
+        auto* const non_const_data = const_cast<T*>(data);
+
         data->~T();
 
-        auto* const freed_segment_header = std::launder(const_cast<segment_header*>(reinterpret_cast<const segment_header*>(data) - 1));
-
-        freed_segment_header->next_free_segment = _free_segments;
-        freed_segment_header->previous_free_segment = nullptr;
-
-        if (freed_segment_header->next_free_segment)
-            freed_segment_header->next_free_segment->previous_free_segment = freed_segment_header;
-
-        _free_segments = freed_segment_header;
+        _free_memory_manager.deallocate(reinterpret_cast<void*>(non_const_data));
     }
 
 private:
     void allocate_new_block(size_t size) {
-        assert(_free_segments == nullptr);
+        const auto allocation_size = std::max(alignof(memory_slab<_slab_size>) + (std::max(size + sizeof(block), 0 + memory_slab<_slab_size>::data_block_size) + sizeof(memory_slab<_slab_size>::data_block_offset)) * 2, _min_allocation_size);
+        const auto allocation_result = _allocator.allocate_at_least(allocation_size);
+        auto* const aligned_data = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(allocation_result.ptr) / memory_slab<_slab_size>::memory_slab_alignment * memory_slab<_slab_size>::memory_slab_alignment);
+        const auto aligned_size = (allocation_size - (reinterpret_cast<std::uintptr_t>(aligned_data) - reinterpret_cast<std::uintptr_t>(allocation_result.ptr))) / sizeof(memory_slab<_slab_size>) * sizeof(memory_slab<_slab_size>);
 
-        // TODO: see how much was actually allocated
-        const auto allocation_result = _allocator.allocate_at_least(size + sizeof(block_header) + sizeof(segment_header));
-        const auto new_block_size = allocation_result.count;
+        assert(aligned_size >= sizeof(memory_slab<_slab_size>) && "aligned size must be at least the size of memory_slab");
+        assert(aligned_size >= size && "aligned size must be at least the requested allocation size");
 
-        auto* const new_block = allocation_result.ptr;
-        auto* const new_block_header = std::launder(reinterpret_cast<block_header*>(new_block));
-        auto* const new_segment = new_block + sizeof(block_header);
-        auto* const new_segment_header = std::launder(reinterpret_cast<segment_header*>(new_segment));
+        auto* const slab = std::launder(reinterpret_cast<memory_slab<_slab_size>*>(aligned_data));
+        slab->header.metadata.mask = 0;
+        slab->header.metadata.element_size = aligned_size - memory_slab<_slab_size>::data_block_offset;
+        slab->header.neighbors.previous = nullptr;
+        slab->header.neighbors.next = nullptr;
+        slab->header.free_list.previous = nullptr;
+        slab->header.free_list.next = nullptr;
 
-        new_block_header->next_block = _block;
+        _free_memory_manager.add_new_memory_segment(slab);
 
-        new_segment_header->previous_neighbor_segment = nullptr;
-        new_segment_header->next_neighbor_segment = nullptr;
-        new_segment_header->previous_free_segment = nullptr;
-        new_segment_header->next_free_segment = nullptr;
-        new_segment_header->data_size = new_block_size - sizeof(block_header) - sizeof(segment_header);
+        if (_last_block._ptr) {
+            auto* const new_block = allocate<block>();
+            *new_block = _last_block;
+        }
 
-        _block = new_block;
-        _free_segments = new_segment_header;
+        _last_block._ptr = allocation_result.ptr;
+        _last_block._next = nullptr;
     }
 
     _allocator_t _allocator{};
-    std::byte* _block{ nullptr };
-    segment_header* _free_segments{ nullptr };
     free_memory_manager<_slab_size> _free_memory_manager{};
+
+    struct block {
+        std::byte* _ptr;
+        block* _next;
+    } _last_block{ nullptr, nullptr };
 
     friend struct AllocatorTest;
 };
 
 template <std::size_t _size = 16 * 1024, std::size_t _slab_size = 1024>
-using in_place_memory = memory<in_place_block_allocator<_size>, _slab_size>;
+using in_place_memory = memory<in_place_block_allocator<_size, _size>, _slab_size>;
 
 }

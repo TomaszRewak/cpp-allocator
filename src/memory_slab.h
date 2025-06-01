@@ -22,7 +22,6 @@ struct alignas(_size) memory_slab final {
         } free_list;
 
         struct metadata {
-            void* free_memory_manager;
             std::size_t element_size;
             std::size_t mask;
         } metadata;
@@ -76,7 +75,7 @@ static_assert(std::is_trivial_v<memory_slab<64>>);
 
 // Compiler-specific sanity checks
 static_assert(sizeof(memory_slab<128>::min_required_data_block_align) == 8);
-static_assert(sizeof(memory_slab<128>::header) == 56);
-static_assert(offsetof(memory_slab<128>, data) == 64);
+static_assert(sizeof(memory_slab<128>::header) == 48);
+static_assert(offsetof(memory_slab<128>, data) == 48);
 
 }
