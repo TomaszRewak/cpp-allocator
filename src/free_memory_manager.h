@@ -28,17 +28,6 @@ public:
         add_memory_segment(slab);
     }
 
-    void add_memory_segment(memory_slab<_slab_size>* const slab) {
-        assert(slab->is_empty() && "slab must be empty when added to the manager");
-        assert(slab->header.metadata.free_memory_manager == this && "slab must belong to this memory manager");
-        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
-        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
-
-        const auto merged_slab = merge_neighbors_into_slab(slab);
-
-        add_to_bucket(merged_slab);
-    }
-
     void* get_memory_block(std::size_t size) {
         const auto matching_bucket_index = required_size_to_sufficient_bucket_index(size);
 
@@ -77,21 +66,6 @@ public:
         return slab->get_element(0);
     }
 
-    void* allocate_from_bucket(std::size_t bucket_index) {
-        auto* const slab = _free_segments[bucket_index];
-        const auto element_index = slab->get_first_free_element();
-
-        assert(!slab->has_element(element_index) && "element must not already exist in slab");
-        assert(element_index < slab->max_elements() && "element index must be within slab bounds");
-
-        slab->set_element(element_index);
-
-        if (slab->is_full())
-            remove_from_free_list(slab);
-
-        return slab->get_element(element_index);
-    }
-
     void release_memory_block(void* const data) {
         auto* const slab_aligned_ptr = reinterpret_cast<void*>(
             reinterpret_cast<std::uintptr_t>(data) & ~(memory_slab<_slab_size>::memory_slab_alignment - 1));
@@ -124,6 +98,32 @@ public:
     }
 
 private:
+    void add_memory_segment(memory_slab<_slab_size>* const slab) {
+        assert(slab->is_empty() && "slab must be empty when added to the manager");
+        assert(slab->header.metadata.free_memory_manager == this && "slab must belong to this memory manager");
+        assert(slab->header.free_list.previous == nullptr && "slab must not have a previous free list element");
+        assert(slab->header.free_list.next == nullptr && "slab must not have a next free list element");
+
+        const auto merged_slab = merge_neighbors_into_slab(slab);
+
+        add_to_bucket(merged_slab);
+    }
+
+    void* allocate_from_bucket(std::size_t bucket_index) {
+        auto* const slab = _free_segments[bucket_index];
+        const auto element_index = slab->get_first_free_element();
+
+        assert(!slab->has_element(element_index) && "element must not already exist in slab");
+        assert(element_index < slab->max_elements() && "element index must be within slab bounds");
+
+        slab->set_element(element_index);
+
+        if (slab->is_full())
+            remove_from_free_list(slab);
+
+        return slab->get_element(element_index);
+    }
+
     void split_slab_at_offset(memory_slab<_slab_size>* slab, std::size_t split_offset) {
         assert(slab != nullptr && "slab must not be null");
         assert(slab->is_empty() && "slab must be empty when splitting");
