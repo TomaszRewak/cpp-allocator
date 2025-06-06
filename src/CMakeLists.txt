@@ -6,4 +6,5 @@ make_library(
     free_memory_manager.h
     memory_slab.h
     types.h
+    utils.h
 )

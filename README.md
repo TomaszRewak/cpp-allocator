@@ -60,6 +60,91 @@ The process of deallocating objects is as follows:
  └─ 11. Return.
 ```
 
-The entire process is visualized in the following diagram:
+The entire process is visualized in the following diagram (click to enlarge):
 
 <img src="https://github.com/TomaszRewak/cpp-allocator/blob/master/resources/diagram.png?raw=true" alt="Slab Allocator Diagram" width="1200">
+
+## Usage
+
+The recommended way to use the allocator is to interact with the `free_memory_manager` class directly. It provides a simple interface for allocating and deallocating memory, as well as managing slabs.
+
+When using the `free_memory_manager`, you remain in control of when and how the slabs are allocated. It's even possible to place them on the stack.
+
+```cpp
+
+#include "src/free_memory_manager.h"
+#include "src/utils.h"
+
+int main() {
+    // create a memory manager capable of managing slabs of size 1024 bytes
+    allocator::free_memory_manager<1024> manager;
+
+    // create 10 slabs of size 1024 bytes each
+    allocator::memory_slab<1024> slabs[10];
+
+    // initialize the slabs (set the slab header metadata)
+    launder_slab(slabs, 10);
+
+    // add slabs to the memory manager (this can be done multiple times)
+    manager.add_new_memory_segment(slabs);
+
+    // allocate 8 bytes of memory
+    void* ptr = manager.allocate(8);
+
+    // use the allocated memory
+    int* my_int = std::launder(reinterpret_cast<int*>(ptr));
+    *my_int = 10;
+
+    // Deallocate the integer
+    manager.deallocate(my_int);
+
+    return 0;
+}
+```
+
+The `free_memory_manager<slab_size>` provides following methods:
+- `void free_memory_manager<slab_size>::add_new_memory_segment(memory_slab<slab_size>* slabs)` - adds a new memory segment to the manager. The slabs must be initialized using the `launder_slab` function before being added.
+- `void* free_memory_manager<slab_size>::allocate(size_t size)` - allocates memory of the requested size.
+- `void free_memory_manager<slab_size>::deallocate(void* ptr)` - deallocates the memory previously acquired using the `allocate` method.
+
+Alternatively one can use the `allocator::memory` class, which is a thin templated wrapper around the `free_memory_manager` class which allows for automating the process of slab allocation and object initialization.
+
+```cpp
+
+#include "src/memory.h"
+
+int main() {
+    // create a memory manager capable of managing slabs of size 1024 bytes
+    allocator::memory<allocator::in_place_block_allocator<10 * 1024, 1024>, 1024> memory;
+
+    // allocate and initialize a custom object
+    auto* my_object = memory.allocate<MyObject>(42, "Hello World");
+
+    // use the allocated object
+    my_object->doSomething();
+
+    // deallocate the object
+    memory.deallocate(my_object);
+}
+
+```
+
+## Configuration
+
+When using the `allocator`, the most important configuration parameter is the slab size. You should choose it based on the expected size of the objects you will be allocating.
+
+There are only two limitations:
+1. The slab size must be a power of two. This is a requirement imposed by the c++ memory alignment rules.
+2. The slab size must be at least 64 bytes as the header alone takes 48 bytes of memory.
+
+Anything else is up for grabs.
+
+Choosing a very small value for the slab size will potentially diminish the benefits of this memory model. Each bigger object will require a header of its own and will not be able to reuse the existing slabs (making the slab management process more expensive).
+
+Choosing a very large value for the slab size will potentially waste a lot of memory when allocating small objects. A single slab can store no more than 64 elements. If you choose a slab size of 1024 bytes but mainly allocate 1-byte values, you will waste 912 bytes of memory per slab.
+
+So the choice depends on the actual usage scenario. The rule of thumb should be to choose a slab size that is equal to the average size of the objects you will be allocating multiplied by 64 (as the slab can store up to 64 elements of the same size). This way you will be able to reuse the existing slabs and minimize the memory overhead.
+
+## Final notes
+
+As mentioned before, this is a for-fun side project and I would not recommend using it in production code. It is not battle-tested and may contain bugs or performance issues. Use it at your own risk or for educational purposes only.

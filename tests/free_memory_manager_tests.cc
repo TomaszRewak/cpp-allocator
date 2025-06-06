@@ -1,5 +1,6 @@
 #include "src/free_memory_manager.h"
 #include "src/memory_slab.h"
+#include "src/utils.h"
 #include <gtest/gtest.h>
 #include <cstdint>
 #include <vector>
@@ -9,20 +10,6 @@ namespace allocator {
 
 class FreeMemoryManagerTest : public ::testing::Test {
 protected:
-    template <std::size_t _slab_size>
-    void launder_slab(memory_slab<_slab_size>* slab, const std::size_t span) {
-        auto* aligned_slab = std::launder(slab);
-        aligned_slab->header.metadata.mask = 0;
-        aligned_slab->header.metadata.element_size = span * _slab_size - memory_slab<_slab_size>::data_block_offset;
-        aligned_slab->header.neighbors.previous = nullptr;
-        aligned_slab->header.neighbors.next = nullptr;
-        aligned_slab->header.free_list.previous = nullptr;
-        aligned_slab->header.free_list.next = nullptr;
-
-        free_memory_manager<256> manager;
-        manager._free_segments_mask = 2;
-    }
-
     template <std::size_t _slab_size, typename... _sizes>
     void ASSERT_MASK_EQ(const free_memory_manager<_slab_size>& manager, _sizes... sizes) {
         ASSERT_EQ(manager._free_segments_mask, ((1ull << manager.block_size_to_bucket_index(sizes)) | ... | 0));

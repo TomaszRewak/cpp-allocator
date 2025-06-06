@@ -7,6 +7,7 @@
 
 #include "block_allocator.h"
 #include "free_memory_manager.h"
+#include "utils.h"
 
 namespace allocator {
 
@@ -57,18 +58,12 @@ private:
         const auto allocation_size = std::max(alignof(memory_slab<_slab_size>) + (std::max(size + sizeof(block), 0 + memory_slab<_slab_size>::data_block_size) + sizeof(memory_slab<_slab_size>::data_block_offset)) * 2, _min_allocation_size);
         const auto allocation_result = _allocator.allocate_at_least(allocation_size);
         auto* const aligned_data = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(allocation_result.ptr) / memory_slab<_slab_size>::memory_slab_alignment * memory_slab<_slab_size>::memory_slab_alignment);
-        const auto aligned_size = (allocation_size - (reinterpret_cast<std::uintptr_t>(aligned_data) - reinterpret_cast<std::uintptr_t>(allocation_result.ptr))) / sizeof(memory_slab<_slab_size>) * sizeof(memory_slab<_slab_size>);
+        const auto slab_count = (allocation_size - (reinterpret_cast<std::uintptr_t>(aligned_data) - reinterpret_cast<std::uintptr_t>(allocation_result.ptr))) / sizeof(memory_slab<_slab_size>);
 
-        assert(aligned_size >= sizeof(memory_slab<_slab_size>) && "aligned size must be at least the size of memory_slab");
-        assert(aligned_size >= size && "aligned size must be at least the requested allocation size");
+        assert(slab_count >= 1 && "aligned size must be at least the size of memory_slab");
 
         auto* const slab = std::launder(reinterpret_cast<memory_slab<_slab_size>*>(aligned_data));
-        slab->header.metadata.mask = 0;
-        slab->header.metadata.element_size = aligned_size - memory_slab<_slab_size>::data_block_offset;
-        slab->header.neighbors.previous = nullptr;
-        slab->header.neighbors.next = nullptr;
-        slab->header.free_list.previous = nullptr;
-        slab->header.free_list.next = nullptr;
+        launder_slab(slab, slab_count);
 
         _free_memory_manager.add_new_memory_segment(slab);
 
