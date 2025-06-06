@@ -59,3 +59,7 @@ The process of deallocating objects is as follows:
  ├┘ 10. Add the slab to the free slab list of the appropriate size.
  └─ 11. Return.
 ```
+
+The entire process is visualized in the following diagram:
+
+<img src="https://github.com/TomaszRewak/cpp-allocator/blob/master/resources/diagram.png?raw=true" alt="Slab Allocator Diagram" width="1200">
