@@ -21,12 +21,23 @@ macro(make_test name)
     gtest_discover_tests(${name})
 endmacro()
 
+macro(make_executable name)
+    add_executable(${name} ${ARGN})
+    target_include_directories(${name} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+endmacro()
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
   URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
 )
 FetchContent_MakeAvailable(googletest)
+FetchContent_Declare(
+  benchmark
+  URL https://github.com/google/benchmark/archive/refs/tags/v1.9.4.zip
+)
+FetchContent_MakeAvailable(benchmark)
 
 add_subdirectory(src)
 add_subdirectory(tests)
+add_subdirectory(benchmarks)

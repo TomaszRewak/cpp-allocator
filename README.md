@@ -15,6 +15,7 @@ Dividing memory into slabs allows for efficient allocations and deallocations (m
 Each slab header contains the following fields:
 - `element_size` - size of the object allocated in this slab (it can be smaller than the slab size if the slab is used to store multiple small objects - or larger than the slab size if the slab spans across multiple neighboring slabs)
 - `mask` - bitmask of allocated objects in the slab (each bit corresponds to an object in the slab at the position of the bit)
+- `full_mask` - the value of the `mask` if the slab was full (used to quickly check if the slab is full)
 - `previous/next_slab` - pointers to the neighboring slabs (used to merge slabs when releasing memory)
 - `previous/next_free_slab` - pointers forming a linked list of free slabs of similar sizes (used for free slab management/lookup)
 
@@ -35,6 +36,7 @@ struct alignas(_size) memory_slab {
         struct metadata {
             std::size_t element_size;
             std::size_t mask;
+            std::size_t full_mask;
         } metadata;
     } header;
 
@@ -42,6 +44,8 @@ struct alignas(_size) memory_slab {
     std::byte data[_size - sizeof(header) - data_block_padding];
 };
 ```
+
+It's worth noting that the `full_mask` field is completely redundant and could be derived on-the-fly from the `element_size` and the (constant) slab size. However, it is stored explicitly to speed up the process of checking if the slab is full. Without this optimization, the `free_memory_manager` would be slower than the standard `new`/`delete` operators for small and mid-size allocations (as discovered when initially benchmarking the code).
 
 The `free_memory_manager` class acts as a memory pool manager and is responsible for organizing, finding, and releasing slabs. It maintains a collection of free slabs categorized by their sizes, allowing for a quick lookup. Slabs are organized into buckets, where each bucket contains slabs (chained together in a linked list) of sizes representing consecutive powers of two (1, 2, 4, 8, 16, ...). Additionally, the `free_memory_manager` maintains a bitmask of occupied buckets to quickly find the next available slab of a suitable size.
 
@@ -158,7 +162,7 @@ When using the `allocator`, the most important configuration parameter is the sl
 
 There are only two limitations:
 1. The slab size must be a power of two. This is a requirement imposed by the c++ memory alignment rules.
-2. The slab size must be at least 64 bytes as the header alone takes 48 bytes of memory.
+2. The slab size must be at least 128 bytes as the header alone takes 56 bytes of memory with 8 bytes of padding.
 
 Anything else is up for grabs. But it will affect the efficiency of the memory management process.
 
@@ -167,6 +171,29 @@ Choosing a very small value for the slab size will potentially diminish the bene
 Choosing a very large value for the slab size will potentially waste a lot of memory when allocating small objects. A single slab can store no more than 64 elements. If you choose a slab size of 1024 bytes but mainly allocate 1-byte boolean values, you will waste 912 bytes of memory per slab.
 
 So the choice depends on the actual usage scenario. The rule of thumb should be to choose a slab size that is equal to the average size of the objects you will be allocating multiplied by 64 (as the slab can store up to 64 elements of the same size). This way you will be able to reuse the existing slabs and minimize the memory overhead.
+
+## Benchmarks
+
+This are the results of the benchmarks comparing the performance of the `free_memory_manager` with the standard `new`/`delete` operators.
+
+```
+-----------------------------------------------------------------------------------------------------------
+Benchmark                                                                 Time             CPU   Iterations
+-----------------------------------------------------------------------------------------------------------
+same_size_small_allocations_with_new                                  18050 ns        18045 ns        40045
+same_size_small_allocations_with_free_memory_manager                  14155 ns        14155 ns        50886
+different_size_small_allocations_with_new                             51253 ns        51253 ns        13863
+different_size_small_allocations_with_free_memory_manager             38492 ns        38491 ns        17564
+same_size_mid_allocations_with_new                                    19088 ns        19088 ns        37382
+same_size_mid_allocations_with_free_memory_manager                    10646 ns        10645 ns        64743
+same_size_mid_allocations_with_misconfigured_free_memory_manager      23193 ns        23194 ns        30382
+big_allocations_with_new                                             511473 ns       511432 ns         1383
+big_allocations_with_free_memory_manager                              58036 ns        58035 ns        12540
+```
+
+In most cases, the `free_memory_manager` outperforms the standard `new`/`delete` operators. This goes for both small, mid-size and big allocations. The only exception is allocating many mid-size objects with a misconfigured `free_memory_manager` (where the slab size is too small and every object requires its own slab).
+
+Please note though that these few simple benchmarks do not cover all possible scenarios and edge cases. The performance of the allocator may vary depending on the actual usage pattern, object sizes, and slab sizes. Considering that this is a for-fun side project, I will leave it at that. But in practice, more thorough benchmarks would be required to draw any meaningful conclusions (this might also include comparing the `free_memory_manager` against other allocation strategies).
 
 ## Final notes
 

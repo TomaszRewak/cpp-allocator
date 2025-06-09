@@ -54,6 +54,7 @@ public:
         split_slab_at_offset(slab, data_block_size + memory_slab<_slab_size>::data_block_offset);
 
         slab->header.metadata.element_size = element_size;
+        slab->header.metadata.full_mask = slab->calculate_full_mask();
         slab->set_element(0);
 
         if (!slab->is_full()) {
@@ -65,12 +66,12 @@ public:
 
     void deallocate(void* const data, std::size_t = 0) {
         auto* const slab_aligned_ptr = reinterpret_cast<void*>(
-            reinterpret_cast<std::uintptr_t>(data) & ~(memory_slab<_slab_size>::memory_slab_alignment - 1));
+            reinterpret_cast<std::size_t>(data) & ~(memory_slab<_slab_size>::memory_slab_alignment - 1));
         auto* const slab = std::launder(reinterpret_cast<memory_slab<_slab_size>*>(slab_aligned_ptr));
         const auto element_size = slab->header.metadata.element_size;
-        const auto element_offset = static_cast<std::size_t>(
-            reinterpret_cast<std::byte*>(data) - reinterpret_cast<std::byte*>(slab_aligned_ptr)
-            ) - memory_slab<_slab_size>::data_block_offset;
+        const auto element_offset = reinterpret_cast<std::size_t>(data)
+            - reinterpret_cast<std::size_t>(slab_aligned_ptr)
+            - memory_slab<_slab_size>::data_block_offset;
         const auto element_index = element_offset / element_size;
         const auto was_full = slab->is_full();
         const auto was_empty = slab->is_empty();
@@ -87,6 +88,7 @@ public:
                 slab->header.metadata.element_size,
                 0 + memory_slab<_slab_size>::data_block_size
             );
+            slab->header.metadata.full_mask = 1;
             add_memory_segment(slab);
         }
         else if (was_full) {
@@ -106,6 +108,8 @@ private:
     }
 
     void* allocate_from_bucket(std::size_t bucket_index) {
+        assert(has_bucket_at_index(bucket_index) && "bucket must exist for the given index");
+
         auto* const slab = _free_segments[bucket_index];
         const auto element_index = slab->get_first_free_element();
 
@@ -141,6 +145,7 @@ private:
 
         remaining_slab->header.metadata.element_size = original_element_size - split_offset;
         remaining_slab->header.metadata.mask = 0;
+        remaining_slab->header.metadata.full_mask = 1;
 
         remaining_slab->header.neighbors.previous = slab;
         remaining_slab->header.neighbors.next = slab->header.neighbors.next;
@@ -239,11 +244,11 @@ private:
         return slab;
     }
 
-    constexpr std::size_t required_size_to_sufficient_bucket_index(const std::size_t size) const {
+    constexpr inline std::size_t required_size_to_sufficient_bucket_index(const std::size_t size) const {
         return std::bit_width(size - 1);
     }
 
-    constexpr std::size_t required_size_to_element_size(const std::size_t size) const {
+    constexpr inline std::size_t required_size_to_element_size(const std::size_t size) const {
         const auto element_size = (1ull << required_size_to_sufficient_bucket_index(size));
         return element_size < memory_slab<_slab_size>::data_block_size
             ? element_size
@@ -251,11 +256,11 @@ private:
             memory_slab<_slab_size>::data_block_offset;
     }
 
-    constexpr std::size_t block_size_to_bucket_index(const std::size_t size) const {
+    constexpr inline std::size_t block_size_to_bucket_index(const std::size_t size) const {
         return std::bit_width(size) - 1;
     }
 
-    bool has_bucket_at_index(const std::size_t bucket_index) const {
+    bool inline has_bucket_at_index(const std::size_t bucket_index) const {
         return _free_segments_mask & (1ull << bucket_index);
     }
 

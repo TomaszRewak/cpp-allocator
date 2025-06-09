@@ -24,6 +24,7 @@ struct alignas(_size) memory_slab final {
         struct metadata {
             std::size_t element_size;
             std::size_t mask;
+            std::size_t full_mask;
         } metadata;
     } header;
 
@@ -40,12 +41,16 @@ struct alignas(_size) memory_slab final {
         return std::max(1ul, sizeof(data) / header.metadata.element_size);
     }
 
+    std::size_t calculate_full_mask() const {
+        return (1 << max_elements()) - 1;
+    }
+
     bool is_empty() const {
         return header.metadata.mask == 0;
     }
 
     bool is_full() const {
-        return header.metadata.mask == (1 << max_elements()) - 1;
+        return header.metadata.mask == header.metadata.full_mask;
     }
 
     bool has_element(std::size_t index) const {
@@ -75,7 +80,8 @@ static_assert(std::is_trivial_v<memory_slab<64>>);
 
 // Compiler-specific sanity checks
 static_assert(sizeof(memory_slab<128>::min_required_data_block_align) == 8);
-static_assert(sizeof(memory_slab<128>::header) == 48);
-static_assert(offsetof(memory_slab<128>, data) == 48);
+static_assert(sizeof(memory_slab<128>::header) == 56);
+static_assert(offsetof(memory_slab<128>, data) == 64);
+static_assert(sizeof(memory_slab<128>) == 128);
 
 }

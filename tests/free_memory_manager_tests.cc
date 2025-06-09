@@ -403,4 +403,23 @@ TEST_F(FreeMemoryManagerTest, ReturnsNullWhenFull) {
     ASSERT_EQ(ptr2, nullptr);
 }
 
+TEST_F(FreeMemoryManagerTest, AllocatesBigObjectsFromMultipleSlabs) {
+    memory_slab<256> slabs[15];
+    launder_slab(slabs, 15);
+
+    free_memory_manager<256> manager;
+    manager.add_new_memory_segment(slabs);
+
+    void* ptr1 = manager.allocate(768);
+    void* ptr2 = manager.allocate(768);
+    void* ptr3 = manager.allocate(768);
+
+    ASSERT_NE(ptr1, nullptr);
+    ASSERT_NE(ptr2, nullptr);
+    ASSERT_NE(ptr3, nullptr);
+    ASSERT_IS_IN_SLAB(ptr1, &slabs[0]);
+    ASSERT_IS_IN_SLAB(ptr2, &slabs[4]);
+    ASSERT_IS_IN_SLAB(ptr3, &slabs[8]);
+}
+
 }

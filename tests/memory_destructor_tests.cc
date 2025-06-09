@@ -25,7 +25,10 @@ private:
     std::vector<int32_t>& _destruction_stack;
 };
 
-struct DestructibleClassAB : private DestructibleClassA, private DestructibleClassB {
+static_assert(sizeof(DestructibleClassA) > 0, "DestructibleClassA must have a non-zero size");
+static_assert(sizeof(DestructibleClassB) > 0, "DestructibleClassB must have a non-zero size");
+
+struct DestructibleClassAB : public DestructibleClassA, public DestructibleClassB {
     DestructibleClassAB(int32_t value, int32_t value_a, int32_t value_b, std::vector<int32_t>& destruction_stack)
         : DestructibleClassA(value_a, destruction_stack), DestructibleClassB(value_b, destruction_stack), _value(value), _destruction_stack(destruction_stack) {
     }
@@ -85,7 +88,7 @@ TEST(MemoryDestructorTest, DestructsDerivedObjectByFirstBaseClassPointer) {
     std::vector<int32_t> destruction_stack;
 
     const auto* value = memory.allocate<DestructibleClassAB>(44, 45, 46, destruction_stack);
-    const auto* base_a = reinterpret_cast<const DestructibleClassA*>(value);
+    const auto* base_a = dynamic_cast<const DestructibleClassA*>(value);
     memory.deallocate(base_a);
 
     ASSERT_EQ(destruction_stack, std::vector<int32_t>({ 44, 46, 45 }));
@@ -96,7 +99,7 @@ TEST(MemoryDestructorTest, DestructsDerivedObjectBySecondBaseClassPointer) {
     std::vector<int32_t> destruction_stack;
 
     const auto* value = memory.allocate<DestructibleClassAB>(44, 45, 46, destruction_stack);
-    const auto* base_b = reinterpret_cast<const DestructibleClassB*>(value);
+    const auto* base_b = dynamic_cast<const DestructibleClassB*>(value);
     memory.deallocate(base_b);
 
     ASSERT_EQ(destruction_stack, std::vector<int32_t>({ 44, 46, 45 }));
